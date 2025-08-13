@@ -66,6 +66,32 @@ export interface IStorage {
   getSessionByToken(token: string): Promise<Session | undefined>;
   deleteSession(token: string): Promise<boolean>;
   deleteExpiredSessions(): Promise<number>;
+  
+  // Utility operations
+  fixEmptyFullNames(): Promise<number>;
+}
+
+// Utility function to generate full name from first and last name
+function generateFullName(firstName?: string | null, lastName?: string | null, existingFullName?: string | null): string {
+  // If fullName already exists and is not empty, keep it
+  if (existingFullName && existingFullName.trim()) {
+    return existingFullName.trim();
+  }
+  
+  // Generate from firstName and lastName
+  const first = firstName?.trim() || '';
+  const last = lastName?.trim() || '';
+  
+  if (first && last) {
+    return `${first} ${last}`;
+  } else if (first) {
+    return first;
+  } else if (last) {
+    return last;
+  }
+  
+  // Return existing fullName if no components available
+  return existingFullName || '';
 }
 
 export class DatabaseStorage implements IStorage {
@@ -156,12 +182,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createContact(insertContact: InsertContact): Promise<Contact> {
+    // Auto-generate fullName if not provided
+    const contactData = {
+      ...insertContact,
+      fullName: generateFullName(insertContact.firstName, insertContact.lastName, insertContact.fullName),
+      updatedAt: new Date(),
+    };
+    
     const [contact] = await db
       .insert(contacts)
-      .values({
-        ...insertContact,
-        updatedAt: new Date(),
-      })
+      .values(contactData)
       .returning();
     
     // Log activity
@@ -175,10 +205,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateContact(id: string, updates: Partial<InsertContact>): Promise<Contact | undefined> {
+    // Get existing contact to check current fullName
+    const existingContact = await this.getContact(id);
+    if (!existingContact) return undefined;
+    
+    // Auto-generate fullName if firstName or lastName is being updated
+    const updatedData = { ...updates };
+    if ('firstName' in updates || 'lastName' in updates || ('fullName' in updates && !updates.fullName)) {
+      updatedData.fullName = generateFullName(
+        updates.firstName ?? existingContact.firstName,
+        updates.lastName ?? existingContact.lastName,
+        updates.fullName ?? existingContact.fullName
+      );
+    }
+    
     const [contact] = await db
       .update(contacts)
       .set({
-        ...updates,
+        ...updatedData,
         updatedAt: new Date(),
       })
       .where(and(eq(contacts.id, id), eq(contacts.isDeleted, false)))
@@ -387,6 +431,49 @@ export class DatabaseStorage implements IStorage {
   async deleteExpiredSessions(): Promise<number> {
     const result = await db.delete(sessions).where(sql`${sessions.expiresAt} <= NOW()`);
     return result.rowCount || 0;
+  }
+
+  // Fix empty fullNames for existing contacts
+  async fixEmptyFullNames(): Promise<number> {
+    // Get all contacts with empty or null fullName but have firstName or lastName
+    const contactsToFix = await db
+      .select()
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.isDeleted, false),
+          sql`(${contacts.fullName} IS NULL OR TRIM(${contacts.fullName}) = '')`,
+          sql`(${contacts.firstName} IS NOT NULL OR ${contacts.lastName} IS NOT NULL)`
+        )
+      );
+
+    let fixedCount = 0;
+    
+    for (const contact of contactsToFix) {
+      const newFullName = generateFullName(contact.firstName, contact.lastName, contact.fullName);
+      
+      if (newFullName && newFullName.trim()) {
+        await db
+          .update(contacts)
+          .set({ 
+            fullName: newFullName,
+            updatedAt: new Date()
+          })
+          .where(eq(contacts.id, contact.id));
+          
+        // Log activity for this fix
+        await this.createContactActivity({
+          contactId: contact.id,
+          activityType: 'updated',
+          description: 'Auto-generated full name from first/last name',
+          changes: { fullName: newFullName }
+        });
+        
+        fixedCount++;
+      }
+    }
+    
+    return fixedCount;
   }
 }
 

@@ -28,6 +28,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Initialize default user
   await initializeDefaultUser();
+  
+  // Fix any existing contacts with empty full names on startup
+  try {
+    const fixedCount = await storage.fixEmptyFullNames();
+    if (fixedCount > 0) {
+      console.log(`✅ Fixed ${fixedCount} contacts with empty full names on startup`);
+    }
+  } catch (error) {
+    console.error('❌ Failed to fix empty full names on startup:', error);
+  }
 
   // Authentication routes
   app.post("/api/login", async (req, res) => {
@@ -295,7 +305,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create contact (protected route)
   app.post("/api/contacts", async (req, res) => {
     try {
-      const validatedData = insertContactSchema.parse(req.body);
+      // Pre-process data to generate fullName if needed
+      const rawData = req.body;
+      
+      // Generate fullName if not provided
+      if (!rawData.fullName && (rawData.firstName || rawData.lastName)) {
+        const first = rawData.firstName?.trim() || '';
+        const last = rawData.lastName?.trim() || '';
+        
+        if (first && last) {
+          rawData.fullName = `${first} ${last}`;
+        } else if (first) {
+          rawData.fullName = first;
+        } else if (last) {
+          rawData.fullName = last;
+        }
+      }
+      
+      // Fallback if still no fullName
+      if (!rawData.fullName) {
+        rawData.fullName = rawData.email ? rawData.email.split('@')[0] : 'Unknown Contact';
+      }
+      
+      const validatedData = insertContactSchema.parse(rawData);
       
       // Check for duplicates
       if (validatedData.email) {
@@ -311,13 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Enrich data
       const enrichedData = await enrichContactData(validatedData);
       
-      // Ensure fullName is provided
-      const fullName = enrichedData.fullName || `${enrichedData.firstName || ''} ${enrichedData.lastName || ''}`.trim() || 'Unknown';
-      
-      const contact = await storage.createContact({
-        ...enrichedData,
-        fullName
-      });
+      const contact = await storage.createContact(enrichedData);
       
       // Log enrichment activity
       await storage.createContactActivity({
@@ -340,8 +366,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('PATCH request body:', req.body);
       
-      // Create a more lenient partial schema for updates
-      const updateSchema = insertContactSchema.partial().extend({
+      // Create a more lenient partial schema for updates by extracting the base schema
+      const baseContactSchema = z.object({
+        fullName: z.string().optional(),
+        firstName: z.string().optional().nullable(),
+        lastName: z.string().optional().nullable(),
+        title: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        mobilePhone: z.string().optional().nullable(),
+        otherPhone: z.string().optional().nullable(),
+        homePhone: z.string().optional().nullable(),
+        corporatePhone: z.string().optional().nullable(),
+        company: z.string().optional().nullable(),
+        employees: z.number().optional().nullable(),
+        employeeSizeBracket: z.string().optional().nullable(),
+        industry: z.string().optional().nullable(),
+        website: z.string().optional().nullable(),
+        companyLinkedIn: z.string().optional().nullable(),
+        technologies: z.array(z.string()).optional().nullable(),
+        annualRevenue: z.string().optional().nullable(),
+        personLinkedIn: z.string().optional().nullable(),
+        city: z.string().optional().nullable(),
+        state: z.string().optional().nullable(),
+        country: z.string().optional().nullable(),
+        companyAddress: z.string().optional().nullable(),
+        companyCity: z.string().optional().nullable(),
+        companyState: z.string().optional().nullable(),
+        companyCountry: z.string().optional().nullable(),
+        emailDomain: z.string().optional().nullable(),
+        countryCode: z.string().optional().nullable(),
+        timezone: z.string().optional().nullable(),
+        leadScore: z.string().optional().nullable(),
+        companyAge: z.number().optional().nullable(),
+        technologyCategory: z.string().optional().nullable(),
+        region: z.string().optional().nullable(),
+        businessType: z.string().optional().nullable(),
+        isDeleted: z.boolean().optional()
+      }).partial();
+      
+      const updateSchema = baseContactSchema.extend({
         employees: z.union([z.number(), z.string(), z.null()]).optional(),
         companyAge: z.union([z.number(), z.string(), z.null()]).optional(),
         leadScore: z.union([z.number(), z.string(), z.null()]).optional(),
@@ -699,6 +762,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.send(csv);
     } catch (error) {
       res.status(500).json({ message: "Failed to export contacts" });
+    }
+  });
+
+  // Fix empty fullNames route (admin utility)
+  app.post("/api/admin/fix-fullnames", requireAuth, async (req, res) => {
+    try {
+      const fixedCount = await storage.fixEmptyFullNames();
+      res.json({ 
+        success: true, 
+        message: `Fixed ${fixedCount} contacts with empty full names`,
+        fixedCount 
+      });
+    } catch (error) {
+      console.error('Fix fullNames error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to fix full names" 
+      });
     }
   });
 

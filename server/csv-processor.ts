@@ -275,9 +275,18 @@ export class AdvancedCSVProcessor {
           continue;
         }
 
-        // Generate fullName if missing
+        // Generate fullName if missing using the same logic as storage
         if (!contactData.fullName && (contactData.firstName || contactData.lastName)) {
-          contactData.fullName = `${contactData.firstName || ''} ${contactData.lastName || ''}`.trim();
+          const first = contactData.firstName?.trim() || '';
+          const last = contactData.lastName?.trim() || '';
+          
+          if (first && last) {
+            contactData.fullName = `${first} ${last}`;
+          } else if (first) {
+            contactData.fullName = first;
+          } else if (last) {
+            contactData.fullName = last;
+          }
         }
 
         // Final validation with Zod

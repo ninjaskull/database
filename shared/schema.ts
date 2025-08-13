@@ -118,6 +118,15 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // Make fullName optional since it can be auto-generated from firstName/lastName
+  fullName: z.string().optional(),
+}).refine((data) => {
+  // Either fullName is provided OR at least firstName/lastName OR email is provided
+  return data.fullName || data.firstName || data.lastName || data.email;
+}, {
+  message: "Either fullName or firstName/lastName or email must be provided",
+  path: ["fullName"]
 });
 
 export const insertContactActivitySchema = createInsertSchema(contactActivities).omit({
