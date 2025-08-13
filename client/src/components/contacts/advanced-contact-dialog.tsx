@@ -180,8 +180,8 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
@@ -200,16 +200,33 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                   Edit Contact
                 </Button>
               ) : (
-                <Button variant="outline" onClick={() => setMode('view')} data-testid="button-cancel-edit">
-                  Cancel
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setMode('view')} data-testid="button-cancel-edit">
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={form.handleSubmit(onSubmit)}
+                    disabled={updateContactMutation.isPending}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    data-testid="button-save-contact"
+                  >
+                    {updateContactMutation.isPending ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-[600px] pr-4">
+          <ScrollArea className="h-[500px] pr-4">
             <Tabs defaultValue="personal" className="w-full">
               <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="personal">Personal</TabsTrigger>
@@ -820,20 +837,7 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                     </Card>
                   </TabsContent>
 
-                  {mode === 'edit' && (
-                    <DialogFooter className="flex gap-2">
-                      <Button type="button" variant="outline" onClick={() => setMode('view')} data-testid="button-cancel">
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit" 
-                        disabled={updateContactMutation.isPending}
-                        data-testid="button-save-contact"
-                      >
-                        {updateContactMutation.isPending ? 'Saving...' : 'Save Changes'}
-                      </Button>
-                    </DialogFooter>
-                  )}
+
                 </form>
               </Form>
             </Tabs>
