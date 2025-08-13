@@ -238,7 +238,7 @@ export class AdvancedCSVProcessor {
           const dbField = fieldMapping[csvHeader];
           console.log(`📋 Mapping: "${csvHeader}" -> "${dbField}" = "${value}"`);
           
-          if (dbField && value && value !== '') {
+          if (dbField && value !== null && value !== undefined && value.toString().trim() !== '') {
             // Handle special field types
             if (dbField === 'technologies') {
               contactData[dbField] = Array.isArray(value) 
@@ -247,9 +247,12 @@ export class AdvancedCSVProcessor {
             } else if (dbField === 'employees') {
               const numValue = parseInt(value.toString().replace(/[^\d]/g, ''));
               if (!isNaN(numValue)) contactData[dbField] = numValue;
-            } else if (dbField === 'annualRevenue') {
-              const numValue = parseFloat(value.toString().replace(/[^\d.]/g, ''));
-              if (!isNaN(numValue)) contactData[dbField] = numValue;
+            } else if (dbField === 'annualRevenue' || dbField === 'leadScore') {
+              // Handle decimal fields - keep as string for Drizzle decimal type
+              const cleanValue = value.toString().replace(/[^\d.-]/g, '');
+              if (cleanValue && !isNaN(parseFloat(cleanValue))) {
+                contactData[dbField] = cleanValue;
+              }
             } else {
               contactData[dbField] = value.toString().trim();
             }
@@ -258,10 +261,18 @@ export class AdvancedCSVProcessor {
         
         console.log('✅ Transformed contact data:', contactData);
 
-        // Ensure minimum required fields
-        if (!contactData.fullName && !contactData.firstName && !contactData.lastName && !contactData.email) {
-          console.log('❌ Skipping record - missing required fields:', contactData);
-          continue; // Skip invalid records silently
+        // More lenient validation - only require email OR (firstName OR lastName OR fullName)
+        const hasName = contactData.fullName || contactData.firstName || contactData.lastName;
+        const hasEmail = contactData.email;
+        
+        if (!hasName && !hasEmail) {
+          console.log('❌ Skipping record - missing both name and email:', contactData);
+          this.errorAccumulator.push({
+            record: rawRecord,
+            error: 'Missing both name (fullName/firstName/lastName) and email - at least one is required',
+            timestamp: new Date().toISOString()
+          });
+          continue;
         }
 
         // Generate fullName if missing
@@ -274,6 +285,7 @@ export class AdvancedCSVProcessor {
         validatedBatch.push(validated);
 
       } catch (error) {
+        console.log('❌ Validation error for record:', rawRecord, 'Error:', error);
         this.errorAccumulator.push({
           record: rawRecord,
           error: error instanceof Error ? error.message : 'Validation failed',
