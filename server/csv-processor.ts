@@ -98,9 +98,7 @@ export class AdvancedCSVProcessor {
       // Stream processing pipeline
       await pipelineAsync(
         fs.createReadStream(filePath, { encoding: 'utf8' }),
-        csv({
-          skipEmptyLines: true,
-        }),
+        csv(),
         batchProcessor
       );
 
@@ -232,9 +230,14 @@ export class AdvancedCSVProcessor {
       try {
         const contactData: any = {};
 
-        // Apply field mapping
+        // Apply field mapping with debugging
+        console.log('🔍 Processing record with mapping:', fieldMapping);
+        console.log('📝 Raw record:', rawRecord);
+        
         Object.entries(rawRecord).forEach(([csvHeader, value]) => {
           const dbField = fieldMapping[csvHeader];
+          console.log(`📋 Mapping: "${csvHeader}" -> "${dbField}" = "${value}"`);
+          
           if (dbField && value && value !== '') {
             // Handle special field types
             if (dbField === 'technologies') {
@@ -252,9 +255,12 @@ export class AdvancedCSVProcessor {
             }
           }
         });
+        
+        console.log('✅ Transformed contact data:', contactData);
 
         // Ensure minimum required fields
         if (!contactData.fullName && !contactData.firstName && !contactData.lastName && !contactData.email) {
+          console.log('❌ Skipping record - missing required fields:', contactData);
           continue; // Skip invalid records silently
         }
 

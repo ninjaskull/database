@@ -127,10 +127,10 @@ class CSVFieldMapper {
     },
     {
       dbField: 'website',
-      patterns: ['website', 'web.*site', 'url', 'homepage', 'web.*address', 'site'],
-      synonyms: ['website', 'web site', 'url', 'homepage', 'web address', 'site', 'web page'],
-      keywords: ['website', 'web', 'url', 'http', 'www', 'site', 'homepage'],
-      weight: 0.9
+      patterns: ['^website$', 'web.*site', 'company.*website', 'homepage', 'web.*address', 'site.*url', 'url'],
+      synonyms: ['website', 'web site', 'company website', 'homepage', 'web address', 'site url', 'url'],
+      keywords: ['website', 'web', 'company', 'homepage', 'site'],
+      weight: 0.95
     },
     {
       dbField: 'technologies',
@@ -143,17 +143,17 @@ class CSVFieldMapper {
     // Social Media
     {
       dbField: 'personLinkedIn',
-      patterns: ['linkedin', 'linked.*in', 'personal.*linkedin', 'person.*linkedin', 'profile'],
-      synonyms: ['linkedin', 'linked in', 'personal linkedin', 'person linkedin', 'profile', 'linkedin profile'],
-      keywords: ['linkedin', 'linked', 'profile', 'personal', 'person'],
-      weight: 0.85
+      patterns: ['person.*linkedin.*url', 'personal.*linkedin.*url', 'linkedin.*url', 'person.*linkedin', 'personal.*linkedin', '^linkedin$', 'profile.*url'],
+      synonyms: ['person linkedin url', 'personal linkedin url', 'linkedin url', 'person linkedin', 'personal linkedin', 'linkedin', 'profile url'],
+      keywords: ['person', 'personal', 'linkedin', 'profile', 'url'],
+      weight: 0.95
     },
     {
       dbField: 'companyLinkedIn',
-      patterns: ['company.*linkedin', 'business.*linkedin', 'corp.*linkedin', 'organization.*linkedin'],
-      synonyms: ['company linkedin', 'business linkedin', 'corp linkedin', 'organization linkedin', 'company profile'],
-      keywords: ['company', 'business', 'corp', 'organization', 'linkedin'],
-      weight: 0.8
+      patterns: ['company.*linkedin.*url', 'business.*linkedin.*url', 'corp.*linkedin.*url', 'organization.*linkedin.*url', 'company.*linkedin'],
+      synonyms: ['company linkedin url', 'business linkedin url', 'corp linkedin url', 'organization linkedin url', 'company linkedin'],
+      keywords: ['company', 'business', 'corp', 'organization', 'linkedin', 'url'],
+      weight: 0.9
     },
     
     // Location Information

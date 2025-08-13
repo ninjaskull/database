@@ -12,36 +12,40 @@ const databaseFields = [
   { value: 'fullName', label: 'Full Name', category: 'Personal' },
   { value: 'firstName', label: 'First Name', category: 'Personal' },
   { value: 'lastName', label: 'Last Name', category: 'Personal' },
-  { value: 'title', label: 'Job Title/Position', category: 'Personal' },
-  { value: 'email', label: 'Email Address', category: 'Contact' },
+  { value: 'title', label: 'Title', category: 'Personal' },
+  
+  // Contact Information
+  { value: 'email', label: 'Email', category: 'Contact' },
   
   // Phone Numbers
   { value: 'mobilePhone', label: 'Mobile Phone', category: 'Phone' },
-  { value: 'corporatePhone', label: 'Corporate Phone', category: 'Phone' },
-  { value: 'homePhone', label: 'Home Phone', category: 'Phone' },
   { value: 'otherPhone', label: 'Other Phone', category: 'Phone' },
+  { value: 'homePhone', label: 'Home Phone', category: 'Phone' },
+  { value: 'corporatePhone', label: 'Corporate Phone', category: 'Phone' },
   
   // Company Information
-  { value: 'company', label: 'Company Name', category: 'Company' },
+  { value: 'company', label: 'Company', category: 'Company' },
+  { value: 'employees', label: 'Employees (Exact number)', category: 'Company' },
+  { value: 'employeeSizeBracket', label: 'Employee Size Bracket (e.g., 1-10, 11-50, etc.)', category: 'Company' },
   { value: 'industry', label: 'Industry', category: 'Company' },
-  { value: 'employees', label: 'Number of Employees', category: 'Company' },
-  { value: 'employeeSizeBracket', label: 'Employee Size Bracket', category: 'Company' },
+  { value: 'website', label: 'Website (Company website)', category: 'Company' },
+  { value: 'technologies', label: 'Technologies', category: 'Company' },
   { value: 'annualRevenue', label: 'Annual Revenue', category: 'Company' },
-  { value: 'technologies', label: 'Technologies Used', category: 'Company' },
-  { value: 'website', label: 'Company Website', category: 'Company' },
-  { value: 'companyLinkedIn', label: 'Company LinkedIn', category: 'Company' },
-  { value: 'companyAddress', label: 'Company Address', category: 'Company' },
-  { value: 'companyCity', label: 'Company City', category: 'Company' },
-  { value: 'companyState', label: 'Company State', category: 'Company' },
-  { value: 'companyCountry', label: 'Company Country', category: 'Company' },
-  
-  // Personal Location
-  { value: 'city', label: 'Personal City', category: 'Location' },
-  { value: 'state', label: 'Personal State', category: 'Location' },
-  { value: 'country', label: 'Personal Country', category: 'Location' },
   
   // Social Media & URLs
-  { value: 'personLinkedIn', label: 'Personal LinkedIn', category: 'Social' },
+  { value: 'personLinkedIn', label: 'Person LinkedIn URL', category: 'Social' },
+  { value: 'companyLinkedIn', label: 'Company LinkedIn URL', category: 'Social' },
+  
+  // Location Information
+  { value: 'city', label: 'City', category: 'Location' },
+  { value: 'state', label: 'State', category: 'Location' },
+  { value: 'country', label: 'Country', category: 'Location' },
+  
+  // Company Location
+  { value: 'companyAddress', label: 'Company Address', category: 'Company Location' },
+  { value: 'companyCity', label: 'Company City', category: 'Company Location' },
+  { value: 'companyState', label: 'Company State', category: 'Company Location' },
+  { value: 'companyCountry', label: 'Company Country', category: 'Company Location' },
   
   // Auto-enriched Fields (optional mapping)
   { value: 'emailDomain', label: 'Email Domain', category: 'Enriched' },
@@ -125,6 +129,15 @@ export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingP
                   </SelectItem>
                 ))}
                 
+                {/* Social Media & URLs */}
+                <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Social Media & URLs</div>
+                {databaseFields.filter(f => f.category === 'Social').map((field) => (
+                  <SelectItem key={field.value} value={field.value}>
+                    {field.label}
+                    {mapping[header] === field.value && ' ✅'}
+                  </SelectItem>
+                ))}
+                
                 {/* Location */}
                 <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Location</div>
                 {databaseFields.filter(f => f.category === 'Location').map((field) => (
@@ -134,9 +147,9 @@ export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingP
                   </SelectItem>
                 ))}
                 
-                {/* Social Media */}
-                <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Social Media</div>
-                {databaseFields.filter(f => f.category === 'Social').map((field) => (
+                {/* Company Location */}
+                <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Company Location</div>
+                {databaseFields.filter(f => f.category === 'Company Location').map((field) => (
                   <SelectItem key={field.value} value={field.value}>
                     {field.label}
                     {mapping[header] === field.value && ' ✅'}
