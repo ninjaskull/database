@@ -203,10 +203,10 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
   return (
     <>
       <Card className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <CardHeader className="px-4 py-3 border-b border-gray-300 dark:border-gray-600">
+        <CardHeader className="px-3 py-2 border-b border-gray-300 dark:border-gray-600">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-medium text-gray-800 dark:text-gray-200">
-              Contact List ({data?.total || 0})
+            <CardTitle className="text-base font-medium text-gray-800 dark:text-gray-200">
+              Contacts ({data?.total || 0})
             </CardTitle>
             <Button
               size="sm"
@@ -214,76 +214,76 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                 setAdvancedDialogContact(null);
                 setAdvancedDialogMode('edit');
               }}
-              className="h-8 bg-blue-600 hover:bg-blue-700 text-white"
+              className="h-7 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs"
               data-testid="button-quick-add-contact"
             >
               <Edit2 className="h-3 w-3 mr-1" />
-              Quick Add
+              Add
             </Button>
           </div>
         </CardHeader>
         
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="table-fixed min-w-full">
             <TableHeader className="bg-gray-50 dark:bg-gray-700">
               <TableRow>
-                <TableHead className="px-3 py-2 w-8">
+                <TableHead className="px-2 py-2 w-8">
                   <Checkbox
                     checked={selectedContactIds.length > 0 && data?.contacts && selectedContactIds.length === data.contacts.length}
                     onCheckedChange={handleSelectAll}
                   />
                 </TableHead>
-                <TableHead className="px-3 py-2">
+                <TableHead className="px-2 py-2 w-56">
                   <Button
                     variant="ghost"
                     onClick={() => handleSort('fullName')}
-                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-2"
+                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-1"
                   >
                     Name
                     <i className={`fas fa-sort ml-1 ${sortBy === 'fullName' ? 'text-blue-600' : ''}`}></i>
                   </Button>
                 </TableHead>
-                <TableHead className="px-3 py-2">
+                <TableHead className="px-2 py-2 w-44">
                   <Button
                     variant="ghost"
                     onClick={() => handleSort('company')}
-                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-2"
+                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-1"
                   >
                     Company
                     <i className={`fas fa-sort ml-1 ${sortBy === 'company' ? 'text-blue-600' : ''}`}></i>
                   </Button>
                 </TableHead>
-                <TableHead className="px-3 py-2">
+                <TableHead className="px-2 py-2 w-52">
                   <Button
                     variant="ghost"
                     onClick={() => handleSort('email')}
-                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-2"
+                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-1"
                   >
-                    Contact Info
+                    Contact
                     <i className={`fas fa-sort ml-1 ${sortBy === 'email' ? 'text-blue-600' : ''}`}></i>
                   </Button>
                 </TableHead>
-                <TableHead className="px-3 py-2">
+                <TableHead className="px-2 py-2 w-32">
                   <Button
                     variant="ghost"
                     onClick={() => handleSort('industry')}
-                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-2"
+                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-1"
                   >
                     Industry
                     <i className={`fas fa-sort ml-1 ${sortBy === 'industry' ? 'text-blue-600' : ''}`}></i>
                   </Button>
                 </TableHead>
-                <TableHead className="px-3 py-2">
+                <TableHead className="px-2 py-2 w-16 text-center">
                   <Button
                     variant="ghost"
                     onClick={() => handleSort('leadScore')}
-                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-2"
+                    className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider hover:text-gray-800 dark:hover:text-gray-200 h-6 px-1"
                   >
                     Score
                     <i className={`fas fa-sort ml-1 ${sortBy === 'leadScore' ? 'text-blue-600' : ''}`}></i>
                   </Button>
                 </TableHead>
-                <TableHead className="px-3 py-2 min-w-[120px] text-center text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                <TableHead className="px-2 py-2 w-24 text-center text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </TableHead>
               </TableRow>
@@ -312,13 +312,13 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                 data?.contacts?.map((contact) => (
                   <TableRow 
                     key={contact.id} 
-                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 h-16 ${
                       editingContactId === contact.id 
                         ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500' 
                         : ''
                     }`}
                   >
-                    <TableCell className="px-3 py-2">
+                    <TableCell className="px-2 py-2">
                       <Checkbox
                         checked={selectedContactIds.includes(contact.id)}
                         onCheckedChange={(checked) => handleSelectContact(contact.id, !!checked)}
@@ -326,9 +326,9 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                     </TableCell>
                     
                     {/* Name Column - Compact */}
-                    <TableCell className="px-3 py-2">
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-8 w-8">
+                    <TableCell className="px-2 py-2">
+                      <div className="flex items-center space-x-2">
+                        <Avatar className="h-7 w-7 flex-shrink-0">
                           <AvatarFallback className="bg-blue-600 text-white text-xs">
                             {getInitials(contact.fullName || 'N/A')}
                           </AvatarFallback>
@@ -345,16 +345,16 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                               <Input
                                 value={editedValues.title || ''}
                                 onChange={(e) => handleInputChange('title', e.target.value)}
-                                className="text-xs h-5 py-0 text-gray-600"
+                                className="text-xs h-4 py-0 text-gray-600"
                                 placeholder="Title"
                               />
                             </div>
                           ) : (
                             <>
-                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={contact.fullName || 'N/A'}>
                                 {contact.fullName || 'N/A'}
                               </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={contact.title || 'No title'}>
                                 {contact.title || 'No title'}
                               </div>
                             </>
@@ -364,7 +364,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                     </TableCell>
 
                     {/* Company Column */}
-                    <TableCell className="px-3 py-2">
+                    <TableCell className="px-2 py-2">
                       {editingContactId === contact.id ? (
                         <Input
                           value={editedValues.company || ''}
@@ -374,10 +374,10 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                         />
                       ) : (
                         <>
-                          <div className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                          <div className="text-sm text-gray-900 dark:text-gray-100 truncate" title={contact.company || 'N/A'}>
                             {contact.company || 'N/A'}
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                             {contact.employeeSizeBracket || 'Unknown size'}
                           </div>
                         </>
@@ -385,7 +385,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                     </TableCell>
 
                     {/* Contact Info Column */}
-                    <TableCell className="px-3 py-2">
+                    <TableCell className="px-2 py-2">
                       {editingContactId === contact.id ? (
                         <div className="space-y-1">
                           <Input
@@ -398,33 +398,33 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                           <Input
                             value={editedValues.mobilePhone || ''}
                             onChange={(e) => handleInputChange('mobilePhone', e.target.value)}
-                            className="text-xs h-5 py-0"
+                            className="text-xs h-4 py-0"
                             placeholder="Phone"
                           />
                         </div>
                       ) : (
                         <>
-                          <div className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                          <div className="text-sm text-gray-900 dark:text-gray-100 truncate" title={contact.email || 'No email'}>
                             {contact.email || 'No email'}
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={contact.mobilePhone || 'No phone'}>
                             {contact.mobilePhone || 'No phone'}
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {contact.country || contact.countryCode || 'Unknown'}
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {contact.country || 'Unknown'}
                           </div>
                         </>
                       )}
                     </TableCell>
 
                     {/* Industry Column */}
-                    <TableCell className="px-3 py-2">
+                    <TableCell className="px-2 py-2">
                       {editingContactId === contact.id ? (
                         <Select
                           value={editedValues.industry || ''}
                           onValueChange={(value) => handleInputChange('industry', value)}
                         >
-                          <SelectTrigger className="h-7 text-sm">
+                          <SelectTrigger className="h-6 text-sm">
                             <SelectValue placeholder="Industry" />
                           </SelectTrigger>
                           <SelectContent>
@@ -441,59 +441,55 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                         </Select>
                       ) : (
                         contact.industry && (
-                          <Badge className={`px-2 py-1 text-xs font-medium ${getIndustryColor(contact.industry)}`}>
-                            {contact.industry}
+                          <Badge className={`px-1 py-0 text-xs font-medium ${getIndustryColor(contact.industry)} truncate`} title={contact.industry}>
+                            {contact.industry.length > 8 ? contact.industry.substring(0, 8) + '...' : contact.industry}
                           </Badge>
                         )
                       )}
                     </TableCell>
 
                     {/* Lead Score Column */}
-                    <TableCell className="px-3 py-2">
+                    <TableCell className="px-2 py-2 text-center">
                       {contact.leadScore && (
-                        <div className="flex items-center space-x-2">
-                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
                             {contact.leadScore}
                           </div>
-                          <div className="w-12 bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
+                          <div className="w-8 bg-gray-200 dark:bg-gray-600 rounded-full h-1">
                             <div
-                              className={`${getLeadScoreColor(Number(contact.leadScore))} h-1.5 rounded-full`}
+                              className={`${getLeadScoreColor(Number(contact.leadScore))} h-1 rounded-full`}
                               style={{ width: `${(Number(contact.leadScore) / 10) * 100}%` }}
                             />
                           </div>
                         </div>
                       )}
                     </TableCell>
-                    {/* Actions Column - Larger buttons for better visibility */}
-                    <TableCell className="px-3 py-2 min-w-[120px]">
-                      <div className="flex items-center justify-center space-x-2">
+                    {/* Actions Column - Compact buttons */}
+                    <TableCell className="px-2 py-2">
+                      <div className="flex items-center justify-center space-x-1">
                         {editingContactId === contact.id ? (
                           <>
                             <Button
                               size="sm"
                               onClick={saveEditing}
                               disabled={updateContactMutation.isPending}
-                              className="h-8 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-medium"
+                              className="h-6 px-2 bg-green-600 hover:bg-green-700 text-white text-xs"
                               title="Save changes"
                             >
                               {updateContactMutation.isPending ? (
                                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               ) : (
-                                <>
-                                  <Save className="h-3 w-3 mr-1" />
-                                  Save
-                                </>
+                                <Save className="h-3 w-3" />
                               )}
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={cancelEditing}
-                              className="h-8 px-3 text-xs font-medium border-gray-300 hover:bg-gray-50"
+                              className="h-6 px-2 text-xs border-gray-300 hover:bg-gray-50"
                               title="Cancel editing"
                             >
-                              <X className="h-3 w-3 mr-1" />
-                              Cancel
+                              <X className="h-3 w-3" />
                             </Button>
                           </>
                         ) : (
@@ -502,7 +498,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                               variant="outline"
                               size="sm"
                               onClick={() => startEditing(contact)}
-                              className="h-8 px-2 text-blue-600 border-blue-200 hover:bg-blue-50 text-xs"
+                              className="h-6 px-1 text-blue-600 border-blue-200 hover:bg-blue-50 text-xs"
                               title="Quick edit"
                               data-testid={`button-quick-edit-${contact.id}`}
                             >
@@ -515,7 +511,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                                 setAdvancedDialogContact(contact);
                                 setAdvancedDialogMode('view');
                               }}
-                              className="h-8 px-2 text-gray-600 hover:bg-gray-50 text-xs"
+                              className="h-6 px-1 text-gray-600 hover:bg-gray-50 text-xs"
                               title="View details"
                               data-testid={`button-view-${contact.id}`}
                             >
@@ -530,7 +526,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                                   queryClient.invalidateQueries({ queryKey: ['contacts'] });
                                 }
                               }}
-                              className="h-8 px-2 text-red-600 hover:bg-red-50 text-xs"
+                              className="h-6 px-1 text-red-600 hover:bg-red-50 text-xs"
                               title="Delete contact"
                               data-testid={`button-delete-${contact.id}`}
                             >
