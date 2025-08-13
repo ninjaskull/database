@@ -62,9 +62,9 @@ export default function Dashboard() {
     
     setIsUpdating(true);
     try {
-      // Filter out empty values
+      // Filter out empty values and "keep-existing" selections
       const updateData = Object.fromEntries(
-        Object.entries(bulkEditData).filter(([_, value]) => value && value !== '')
+        Object.entries(bulkEditData).filter(([_, value]) => value && value !== '' && value !== 'keep-existing')
       );
       
       if (Object.keys(updateData).length === 0) {
@@ -235,7 +235,7 @@ export default function Dashboard() {
                       <SelectValue placeholder="Select industry..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Keep existing</SelectItem>
+                      <SelectItem value="keep-existing">Keep existing</SelectItem>
                       <SelectItem value="Technology">Technology</SelectItem>
                       <SelectItem value="Healthcare">Healthcare</SelectItem>
                       <SelectItem value="Finance">Finance</SelectItem>
@@ -257,7 +257,7 @@ export default function Dashboard() {
                       <SelectValue placeholder="Select size bracket..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Keep existing</SelectItem>
+                      <SelectItem value="keep-existing">Keep existing</SelectItem>
                       <SelectItem value="1-10">1-10 employees</SelectItem>
                       <SelectItem value="11-50">11-50 employees</SelectItem>
                       <SelectItem value="51-200">51-200 employees</SelectItem>
@@ -277,7 +277,7 @@ export default function Dashboard() {
                       <SelectValue placeholder="Select country..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Keep existing</SelectItem>
+                      <SelectItem value="keep-existing">Keep existing</SelectItem>
                       <SelectItem value="United States">United States</SelectItem>
                       <SelectItem value="United Kingdom">United Kingdom</SelectItem>
                       <SelectItem value="Germany">Germany</SelectItem>

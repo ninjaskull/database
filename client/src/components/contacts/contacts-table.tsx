@@ -168,10 +168,10 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
   const saveEditing = async () => {
     if (!editingContactId) return;
     
-    // Filter out empty values and only send changed values
+    // Filter out empty values, "none" selections, and only send changed values
     const cleanedData = Object.fromEntries(
       Object.entries(editedValues).filter(([key, value]) => 
-        value !== null && value !== undefined && value !== ""
+        value !== null && value !== undefined && value !== "" && value !== "none"
       )
     );
 
@@ -421,13 +421,14 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                     <TableCell className="px-2 py-2">
                       {editingContactId === contact.id ? (
                         <Select
-                          value={editedValues.industry || ''}
+                          value={editedValues.industry || 'none'}
                           onValueChange={(value) => handleInputChange('industry', value)}
                         >
                           <SelectTrigger className="h-6 text-sm">
                             <SelectValue placeholder="Industry" />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="none">Select industry...</SelectItem>
                             <SelectItem value="Technology">Technology</SelectItem>
                             <SelectItem value="Healthcare">Healthcare</SelectItem>
                             <SelectItem value="Finance">Finance</SelectItem>

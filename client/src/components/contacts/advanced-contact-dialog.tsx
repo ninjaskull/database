@@ -503,12 +503,12 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                             <FormItem>
                               <FormLabel>Employee Size Bracket</FormLabel>
                               <FormControl>
-                                <Select value={field.value || ""} onValueChange={field.onChange} disabled={mode === 'view'}>
+                                <Select value={field.value || "none"} onValueChange={field.onChange} disabled={mode === 'view'}>
                                   <SelectTrigger data-testid="select-employeeSizeBracket">
                                     <SelectValue placeholder="Select or auto-filled from employee count" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="">Select bracket...</SelectItem>
+                                    <SelectItem value="none">Select bracket...</SelectItem>
                                     {EMPLOYEE_SIZE_BRACKETS.map((bracket) => (
                                       <SelectItem key={bracket} value={bracket}>
                                         {bracket} employees
