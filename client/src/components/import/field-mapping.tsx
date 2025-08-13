@@ -12,7 +12,7 @@ const databaseFields = [
   { value: 'fullName', label: 'Full Name', category: 'Personal' },
   { value: 'firstName', label: 'First Name', category: 'Personal' },
   { value: 'lastName', label: 'Last Name', category: 'Personal' },
-  { value: 'title', label: 'Title', category: 'Personal' },
+  { value: 'title', label: 'Job Title', category: 'Personal' },
   
   // Contact Information
   { value: 'email', label: 'Email', category: 'Contact' },
@@ -75,7 +75,7 @@ export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingP
   };
 
   return (
-    <div className="space-y-3 max-h-64 overflow-y-auto">
+    <div className="space-y-3 max-h-80 overflow-y-auto">
       {headers.map((header) => (
         <div key={header} className="flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-600">
           <div className="flex-1">
@@ -90,7 +90,7 @@ export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingP
               <SelectTrigger>
                 <SelectValue placeholder="-- Skip Column --" />
               </SelectTrigger>
-              <SelectContent className="max-h-80 overflow-y-auto">
+              <SelectContent className="max-h-96 overflow-y-auto" position="popper" sideOffset={4}>
                 <SelectItem value="skip">🚫 Don't Import</SelectItem>
                 
                 {/* Personal Information */}
