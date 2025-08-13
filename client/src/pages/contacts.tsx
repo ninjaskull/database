@@ -21,11 +21,11 @@ export default function Contacts() {
         <Header />
         
         <main className="flex-1 relative overflow-y-auto focus:outline-none">
-          <div className="py-6">
+          <div className="py-4">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-              <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">All Contacts</h1>
-                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Complete list of your contacts</p>
+              <div className="mb-4">
+                <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200">All Contacts</h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Manage and edit your contact database</p>
               </div>
 
               <FilterBar 
