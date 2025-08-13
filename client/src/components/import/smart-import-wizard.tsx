@@ -114,12 +114,28 @@ export function SmartImportWizard() {
         method: 'POST',
         body: formData,
       });
-      if (!response.ok) throw new Error('Auto-mapping failed');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Auto-mapping failed:', response.status, errorText);
+        throw new Error(`Auto-mapping failed: ${response.status}`);
+      }
       return response.json();
     },
     onSuccess: (data) => {
+      console.log('Auto-mapping response:', data);
+      
+      if (!data.headers || !Array.isArray(data.headers)) {
+        console.error('Invalid response structure:', data);
+        toast({
+          title: "Error",
+          description: "Invalid response from server",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       const mappings: FieldMapping[] = data.headers.map((header: string) => {
-        const dbField = data.mapping[header];
+        const dbField = data.autoMapping?.[header] || data.mapping?.[header];
         const confidence = data.confidence?.[header] || 0;
         const suggestions = data.suggestions?.[header] || [];
         const sample = data.preview?.[0]?.[header] || '';
@@ -134,12 +150,20 @@ export function SmartImportWizard() {
       });
       
       setFieldMappings(mappings);
-      setFinalMapping(data.mapping);
+      setFinalMapping(data.autoMapping || data.mapping || {});
       setStep('mapping');
       
       toast({
         title: "Smart mapping complete",
-        description: `Automatically mapped ${Object.keys(data.mapping).length} fields`,
+        description: `Automatically mapped ${Object.keys(data.autoMapping || data.mapping || {}).length} fields`,
+      });
+    },
+    onError: (error) => {
+      console.error('Auto-mapping error:', error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to process file",
+        variant: "destructive",
       });
     },
   });
