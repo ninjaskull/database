@@ -86,8 +86,8 @@ export default function SettingsPage() {
   const profileForm = useForm<ProfileData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      name: (user as any)?.name || "",
-      email: (user as any)?.email || "",
+      name: (user as any)?.name || "Amit",
+      email: (user as any)?.email || "amit@fallowl.com",
       phone: "",
       timezone: "UTC",
       language: "en",
@@ -150,13 +150,15 @@ export default function SettingsPage() {
         body: JSON.stringify(data),
       });
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       toast({ title: "Profile updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('Profile update error:', error);
       toast({
         title: "Failed to update profile",
+        description: "Please try again later",
         variant: "destructive",
       });
     },
@@ -219,13 +221,17 @@ export default function SettingsPage() {
 
   const exportDataMutation = useMutation({
     mutationFn: async () => {
+      const token = localStorage.getItem('authToken');
       const response = await fetch("/api/export/all", {
         credentials: "include",
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
+        headers: token ? {
+          'Authorization': `Bearer ${token}`,
+        } : {},
       });
-      if (!response.ok) throw new Error('Export failed');
+      
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.status}`);
+      }
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -240,9 +246,11 @@ export default function SettingsPage() {
     onSuccess: () => {
       toast({ title: "Data exported successfully" });
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('Export error:', error);
       toast({
         title: "Export failed",
+        description: "Please try again later",
         variant: "destructive",
       });
     },
