@@ -108,7 +108,11 @@ export class DatabaseStorage implements IStorage {
       .where(whereClause);
     
     // Get contacts with pagination and sorting
-    const sortColumn = contacts[sortBy as keyof typeof contacts] || contacts.createdAt;
+    const contactColumns = Object.keys(contacts) as Array<keyof typeof contacts>;
+    const isValidColumn = (key: string): key is keyof typeof contacts => {
+      return contactColumns.includes(key as keyof typeof contacts);
+    };
+    const sortColumn = isValidColumn(sortBy) ? contacts[sortBy] : contacts.createdAt;
     const orderBy = sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn);
     
     const contactsList = await db

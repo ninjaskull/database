@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertContactSchema, insertImportJobSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
-import { enrichContactData } from "../client/src/lib/data-enrichment.js";
+import { enrichContactData } from "../client/src/lib/data-enrichment";
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -59,7 +59,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check for duplicates
       if (validatedData.email) {
-        const duplicates = await storage.findDuplicateContacts(validatedData.email, validatedData.company);
+        const duplicates = await storage.findDuplicateContacts(validatedData.email, validatedData.company || undefined);
         if (duplicates.length > 0) {
           return res.status(409).json({ 
             message: "Duplicate contact found",
@@ -71,7 +71,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Enrich data
       const enrichedData = await enrichContactData(validatedData);
       
-      const contact = await storage.createContact(enrichedData);
+      // Ensure fullName is provided
+      const fullName = enrichedData.fullName || `${enrichedData.firstName || ''} ${enrichedData.lastName || ''}`.trim() || 'Unknown';
+      
+      const contact = await storage.createContact({
+        ...enrichedData,
+        fullName
+      });
       
       // Log enrichment activity
       await storage.createContactActivity({
@@ -329,7 +335,14 @@ async function processCSVFile(filePath: string, jobId: string, options: any) {
         
         // Enrich and create contact
         const enrichedData = await enrichContactData(contactData);
-        const newContact = await storage.createContact(enrichedData);
+        
+        // Ensure fullName is provided
+        const fullName = enrichedData.fullName || `${enrichedData.firstName || ''} ${enrichedData.lastName || ''}`.trim() || 'Unknown';
+        
+        const newContact = await storage.createContact({
+          ...enrichedData,
+          fullName
+        });
         console.log(`Created contact: ${newContact.fullName}`);
         successful++;
         
