@@ -283,7 +283,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                     <i className={`fas fa-sort ml-1 ${sortBy === 'leadScore' ? 'text-blue-600' : ''}`}></i>
                   </Button>
                 </TableHead>
-                <TableHead className="px-3 py-2 w-24 text-center text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                <TableHead className="px-3 py-2 min-w-[120px] text-center text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </TableHead>
               </TableRow>
@@ -310,7 +310,14 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                 </TableRow>
               ) : (
                 data?.contacts?.map((contact) => (
-                  <TableRow key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <TableRow 
+                    key={contact.id} 
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                      editingContactId === contact.id 
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500' 
+                        : ''
+                    }`}
+                  >
                     <TableCell className="px-3 py-2">
                       <Checkbox
                         checked={selectedContactIds.includes(contact.id)}
@@ -457,38 +464,45 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                         </div>
                       )}
                     </TableCell>
-                    {/* Actions Column - Compact */}
-                    <TableCell className="px-3 py-2">
-                      <div className="flex items-center space-x-1">
+                    {/* Actions Column - Larger buttons for better visibility */}
+                    <TableCell className="px-3 py-2 min-w-[120px]">
+                      <div className="flex items-center justify-center space-x-2">
                         {editingContactId === contact.id ? (
                           <>
                             <Button
-                              variant="ghost"
                               size="sm"
                               onClick={saveEditing}
                               disabled={updateContactMutation.isPending}
-                              className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                              className="h-8 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-medium"
                               title="Save changes"
                             >
-                              <Save className="h-3 w-3" />
+                              {updateContactMutation.isPending ? (
+                                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <>
+                                  <Save className="h-3 w-3 mr-1" />
+                                  Save
+                                </>
+                              )}
                             </Button>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
                               onClick={cancelEditing}
-                              className="h-7 w-7 p-0 text-gray-600 hover:text-gray-700 hover:bg-gray-50"
+                              className="h-8 px-3 text-xs font-medium border-gray-300 hover:bg-gray-50"
                               title="Cancel editing"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="h-3 w-3 mr-1" />
+                              Cancel
                             </Button>
                           </>
                         ) : (
                           <>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
                               onClick={() => startEditing(contact)}
-                              className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              className="h-8 px-2 text-blue-600 border-blue-200 hover:bg-blue-50 text-xs"
                               title="Quick edit"
                               data-testid={`button-quick-edit-${contact.id}`}
                             >
@@ -501,7 +515,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                                 setAdvancedDialogContact(contact);
                                 setAdvancedDialogMode('view');
                               }}
-                              className="h-7 w-7 p-0 text-gray-600 hover:text-gray-700 hover:bg-gray-50"
+                              className="h-8 px-2 text-gray-600 hover:bg-gray-50 text-xs"
                               title="View details"
                               data-testid={`button-view-${contact.id}`}
                             >
@@ -516,7 +530,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                                   queryClient.invalidateQueries({ queryKey: ['contacts'] });
                                 }
                               }}
-                              className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              className="h-8 px-2 text-red-600 hover:bg-red-50 text-xs"
                               title="Delete contact"
                               data-testid={`button-delete-${contact.id}`}
                             >
