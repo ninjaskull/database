@@ -1,10 +1,10 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface FieldMappingProps {
-  csvHeaders: string[];
-  csvRows: any[][];
-  fieldMapping: Record<string, string>;
-  onFieldMappingChange: (mapping: Record<string, string>) => void;
+  headers: string[];
+  data: any[];
+  mapping: Record<string, string>;
+  onChange: (mapping: Record<string, string>) => void;
 }
 
 const databaseFields = [
@@ -35,33 +35,33 @@ const databaseFields = [
   { value: 'annualRevenue', label: 'Annual Revenue' },
 ];
 
-export function FieldMapping({ csvHeaders, csvRows, fieldMapping, onFieldMappingChange }: FieldMappingProps) {
+export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingProps) {
   const updateMapping = (csvHeader: string, dbField: string) => {
-    const newMapping = { ...fieldMapping };
+    const newMapping = { ...mapping };
     if (dbField === 'skip') {
       delete newMapping[csvHeader];
     } else {
       newMapping[csvHeader] = dbField;
     }
-    onFieldMappingChange(newMapping);
+    onChange(newMapping);
   };
 
-  const getSampleData = (headerIndex: number) => {
-    const samples = csvRows.slice(0, 3).map(row => row[headerIndex]).filter(Boolean);
+  const getSampleData = (header: string) => {
+    const samples = data.slice(0, 3).map(row => row[header]).filter(Boolean);
     return samples.length > 0 ? samples.join(', ') + '...' : 'No data';
   };
 
   return (
     <div className="space-y-3 max-h-64 overflow-y-auto">
-      {csvHeaders.map((header, index) => (
+      {headers.map((header) => (
         <div key={header} className="flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-600">
           <div className="flex-1">
             <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{header}</span>
-            <div className="text-xs text-gray-600 dark:text-gray-400">{getSampleData(index)}</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">{getSampleData(header)}</div>
           </div>
           <div className="flex-1 max-w-xs ml-4">
             <Select 
-              value={fieldMapping[header] || 'skip'} 
+              value={mapping[header] || 'skip'} 
               onValueChange={(value) => updateMapping(header, value)}
             >
               <SelectTrigger>
@@ -72,7 +72,7 @@ export function FieldMapping({ csvHeaders, csvRows, fieldMapping, onFieldMapping
                 {databaseFields.map((field) => (
                   <SelectItem key={field.value} value={field.value}>
                     {field.label}
-                    {fieldMapping[header] === field.value && ' ✓'}
+                    {mapping[header] === field.value && ' ✓'}
                   </SelectItem>
                 ))}
               </SelectContent>

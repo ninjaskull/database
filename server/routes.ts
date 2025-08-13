@@ -5,6 +5,7 @@ import { insertContactSchema, insertImportJobSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import { enrichContactData } from "../client/src/lib/data-enrichment";
+import { csvFieldMapper } from "./nlp-mapper";
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -165,6 +166,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auto-map CSV headers using custom NLP model
+  app.post("/api/import/auto-map", upload.single('csv'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fs = await import('fs');
+      const csvText = fs.readFileSync(req.file.path, 'utf8');
+      const lines = csvText.split('\n').filter(line => line.trim() !== '');
+      
+      if (lines.length === 0) {
+        return res.status(400).json({ message: "Empty CSV file" });
+      }
+
+      // Parse headers
+      const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+      
+      // Use custom NLP model to automatically map fields
+      const autoMapping = csvFieldMapper.mapHeaders(headers);
+      const confidence = csvFieldMapper.getMappingConfidence(headers, autoMapping);
+      
+      // Get suggestions for low-confidence mappings
+      const suggestions: Record<string, Array<{ field: string; confidence: number }>> = {};
+      for (const header of headers) {
+        if (!autoMapping[header] || confidence[header] < 0.7) {
+          suggestions[header] = csvFieldMapper.suggestAlternatives(header, autoMapping[header]);
+        }
+      }
+
+      // Preview first few rows
+      const previewRows = lines.slice(1, 4).map(line => {
+        const values = line.split(',').map(v => v.replace(/"/g, '').trim());
+        const row: Record<string, string> = {};
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
+        return row;
+      });
+
+      // Store file for later import
+      const tempFileName = `${Date.now()}_${req.file.originalname}`;
+      const tempPath = `uploads/${tempFileName}`;
+      fs.renameSync(req.file.path, tempPath);
+
+      res.json({
+        headers,
+        autoMapping,
+        confidence,
+        suggestions,
+        preview: previewRows,
+        totalRows: lines.length - 1,
+        tempFile: tempFileName
+      });
+    } catch (error) {
+      console.error('Auto-mapping error:', error);
+      res.status(500).json({ message: "Failed to analyze CSV file" });
+    }
+  });
+
   // CSV Import
   app.post("/api/import", upload.single('csv'), async (req, res) => {
     try {
@@ -291,7 +352,14 @@ async function processCSVFile(filePath: string, jobId: string, options: any) {
       totalRows: dataRows.length,
     });
     
-    const fieldMapping = JSON.parse(options.fieldMapping || '{}');
+    let fieldMapping = JSON.parse(options.fieldMapping || '{}');
+    
+    // If no field mapping provided, use auto-mapping
+    if (Object.keys(fieldMapping).length === 0) {
+      console.log('No field mapping provided, using NLP auto-mapping...');
+      fieldMapping = csvFieldMapper.mapHeaders(headers);
+      console.log('Auto-mapped fields:', fieldMapping);
+    }
     let processed = 0;
     let successful = 0;
     let errors = 0;

@@ -6,16 +6,18 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { FieldMapping } from "./field-mapping";
+import { AutoMapping } from "./auto-mapping";
 import { parseCSV } from "@/lib/csv-parser";
 import { apiRequest } from "@/lib/queryClient";
 import type { ImportJob } from "@shared/schema";
 
-type ImportStep = 'upload' | 'mapping' | 'progress' | 'complete';
+type ImportStep = 'upload' | 'auto-mapping' | 'mapping' | 'progress' | 'complete';
 
 export function ImportModal() {
   const [step, setStep] = useState<ImportStep>('upload');
   const [csvData, setCsvData] = useState<{ headers: string[]; rows: any[][] } | null>(null);
   const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
+  const [autoMappingData, setAutoMappingData] = useState<any>(null);
   const [importOptions, setImportOptions] = useState({
     skipDuplicates: true,
     updateExisting: true,
@@ -35,6 +37,35 @@ export function ImportModal() {
     },
     enabled: !!jobId && step === 'progress',
     refetchInterval: 1000,
+  });
+
+  const autoMapMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await fetch('/api/import/auto-map', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(`Auto-mapping failed: ${response.status}`);
+      }
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      setAutoMappingData(data);
+      setFieldMapping(data.autoMapping);
+      setStep('auto-mapping');
+      toast({
+        title: "Smart mapping complete",
+        description: `Automatically mapped ${Object.keys(data.autoMapping).length} fields using NLP analysis.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Auto-mapping failed",
+        description: "There was an error analyzing your file.",
+        variant: "destructive",
+      });
+    },
   });
 
   const uploadMutation = useMutation({
@@ -84,41 +115,11 @@ export function ImportModal() {
       return;
     }
 
-    try {
-      const parsed = await parseCSV(file);
-      setCsvData(parsed);
-      setStep('mapping');
-      
-      // Auto-map common fields
-      const autoMapping: Record<string, string> = {};
-      parsed.headers.forEach(header => {
-        const lowerHeader = header.toLowerCase();
-        if (lowerHeader.includes('name') && !lowerHeader.includes('first') && !lowerHeader.includes('last')) {
-          autoMapping[header] = 'fullName';
-        } else if (lowerHeader.includes('first') && lowerHeader.includes('name')) {
-          autoMapping[header] = 'firstName';
-        } else if (lowerHeader.includes('last') && lowerHeader.includes('name')) {
-          autoMapping[header] = 'lastName';
-        } else if (lowerHeader.includes('email')) {
-          autoMapping[header] = 'email';
-        } else if (lowerHeader.includes('company')) {
-          autoMapping[header] = 'company';
-        } else if (lowerHeader.includes('title')) {
-          autoMapping[header] = 'title';
-        } else if (lowerHeader.includes('phone') || lowerHeader.includes('mobile')) {
-          autoMapping[header] = 'mobilePhone';
-        } else if (lowerHeader.includes('industry')) {
-          autoMapping[header] = 'industry';
-        }
-      });
-      setFieldMapping(autoMapping);
-    } catch (error) {
-      toast({
-        title: "Parse error",
-        description: "There was an error reading your CSV file.",
-        variant: "destructive",
-      });
-    }
+    // Use auto-mapping API for intelligent field detection
+    const formData = new FormData();
+    formData.append('csv', file);
+    
+    autoMapMutation.mutate(formData);
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -161,6 +162,7 @@ export function ImportModal() {
     setStep('upload');
     setCsvData(null);
     setFieldMapping({});
+    setAutoMappingData(null);
     setJobId(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -208,16 +210,28 @@ export function ImportModal() {
           </div>
         )}
 
-        {step === 'mapping' && csvData && (
+        {step === 'auto-mapping' && autoMappingData && (
+          <AutoMapping
+            headers={autoMappingData.headers}
+            autoMapping={autoMappingData.autoMapping}
+            confidence={autoMappingData.confidence}
+            suggestions={autoMappingData.suggestions}
+            preview={autoMappingData.preview}
+            onMappingChange={setFieldMapping}
+            onConfirm={() => setStep('mapping')}
+          />
+        )}
+
+        {step === 'mapping' && autoMappingData && (
           <div>
             <h4 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-4">
               Map CSV Columns to Database Fields
             </h4>
             <FieldMapping
-              csvHeaders={csvData.headers}
-              csvRows={csvData.rows}
-              fieldMapping={fieldMapping}
-              onFieldMappingChange={setFieldMapping}
+              headers={autoMappingData.headers}
+              mapping={fieldMapping}
+              onChange={setFieldMapping}
+              data={autoMappingData.preview}
             />
             
             <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
