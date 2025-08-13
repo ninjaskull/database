@@ -4,7 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 export interface User {
   id: string;
   email: string;
-  name: string;
+  name?: string;
 }
 
 export function useAuth() {

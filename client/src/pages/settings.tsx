@@ -1,0 +1,919 @@
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Header } from "@/components/layout/header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { apiRequest } from "@/lib/queryClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { 
+  User, Settings, Bell, Shield, Database, Download, Upload, 
+  Trash2, RefreshCw, Eye, EyeOff, Save, AlertTriangle,
+  Mail, Phone, Globe, Clock, Palette, Monitor, Sun, Moon
+} from "lucide-react";
+
+// Settings schemas
+const profileSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().optional(),
+  timezone: z.string(),
+  language: z.string(),
+});
+
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string(),
+}).refine(data => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+const notificationSchema = z.object({
+  emailNotifications: z.boolean(),
+  smsNotifications: z.boolean(),
+  pushNotifications: z.boolean(),
+  weeklyReports: z.boolean(),
+  importAlerts: z.boolean(),
+  systemUpdates: z.boolean(),
+});
+
+const systemSchema = z.object({
+  autoBackup: z.boolean(),
+  dataRetention: z.string(),
+  exportFormat: z.string(),
+  defaultView: z.string(),
+  recordsPerPage: z.string(),
+  autoSave: z.boolean(),
+});
+
+const appearanceSchema = z.object({
+  theme: z.string(),
+  compactMode: z.boolean(),
+  showAvatars: z.boolean(),
+  fontSize: z.string(),
+  sidebar: z.string(),
+});
+
+type ProfileData = z.infer<typeof profileSchema>;
+type PasswordData = z.infer<typeof passwordSchema>;
+type NotificationData = z.infer<typeof notificationSchema>;
+type SystemData = z.infer<typeof systemSchema>;
+type AppearanceData = z.infer<typeof appearanceSchema>;
+
+export default function SettingsPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("profile");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Profile form
+  const profileForm = useForm<ProfileData>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      name: (user as any)?.name || "",
+      email: (user as any)?.email || "",
+      phone: "",
+      timezone: "UTC",
+      language: "en",
+    },
+  });
+
+  // Password form
+  const passwordForm = useForm<PasswordData>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
+
+  // Notification form
+  const notificationForm = useForm<NotificationData>({
+    resolver: zodResolver(notificationSchema),
+    defaultValues: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      weeklyReports: true,
+      importAlerts: true,
+      systemUpdates: false,
+    },
+  });
+
+  // System form
+  const systemForm = useForm<SystemData>({
+    resolver: zodResolver(systemSchema),
+    defaultValues: {
+      autoBackup: true,
+      dataRetention: "365",
+      exportFormat: "csv",
+      defaultView: "table",
+      recordsPerPage: "20",
+      autoSave: true,
+    },
+  });
+
+  // Appearance form
+  const appearanceForm = useForm<AppearanceData>({
+    resolver: zodResolver(appearanceSchema),
+    defaultValues: {
+      theme: "system",
+      compactMode: false,
+      showAvatars: true,
+      fontSize: "medium",
+      sidebar: "expanded",
+    },
+  });
+
+  // Mutations
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: ProfileData) => {
+      return await apiRequest("/api/settings/profile", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Profile updated successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to update profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updatePasswordMutation = useMutation({
+    mutationFn: async (data: PasswordData) => {
+      return await apiRequest("/api/settings/password", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Password updated successfully" });
+      passwordForm.reset();
+    },
+    onError: () => {
+      toast({
+        title: "Failed to update password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateNotificationsMutation = useMutation({
+    mutationFn: async (data: NotificationData) => {
+      return await apiRequest("/api/settings/notifications", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Notification preferences updated" });
+    },
+  });
+
+  const updateSystemMutation = useMutation({
+    mutationFn: async (data: SystemData) => {
+      return await apiRequest("/api/settings/system", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "System settings updated" });
+    },
+  });
+
+  const updateAppearanceMutation = useMutation({
+    mutationFn: async (data: AppearanceData) => {
+      return await apiRequest("/api/settings/appearance", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Appearance settings updated" });
+    },
+  });
+
+  const exportDataMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/export/all", {
+        credentials: "include",
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      if (!response.ok) throw new Error('Export failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `crm-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    },
+    onSuccess: () => {
+      toast({ title: "Data exported successfully" });
+    },
+    onError: () => {
+      toast({
+        title: "Export failed",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const clearCacheMutation = useMutation({
+    mutationFn: async () => {
+      localStorage.clear();
+      queryClient.clear();
+    },
+    onSuccess: () => {
+      toast({ title: "Cache cleared successfully" });
+    },
+  });
+
+  const handleDeleteAccount = async () => {
+    if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
+      try {
+        await apiRequest("/api/settings/delete-account", {
+          method: "DELETE",
+        });
+        toast({ title: "Account deletion initiated" });
+        // Redirect to login
+        window.location.href = "/";
+      } catch (error) {
+        toast({
+          title: "Failed to delete account",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  return (
+    <div className="h-screen flex bg-gray-50 dark:bg-gray-900" data-testid="settings-page">
+      <Sidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 dark:bg-gray-900">
+          <div className="container mx-auto px-6 py-8">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+                <Settings className="mr-3 h-8 w-8" />
+                Settings
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Manage your account, preferences, and system settings
+              </p>
+            </div>
+
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList className="grid w-full grid-cols-5 lg:w-fit">
+                <TabsTrigger value="profile" className="flex items-center">
+                  <User className="mr-2 h-4 w-4" />
+                  Profile
+                </TabsTrigger>
+                <TabsTrigger value="security" className="flex items-center">
+                  <Shield className="mr-2 h-4 w-4" />
+                  Security
+                </TabsTrigger>
+                <TabsTrigger value="notifications" className="flex items-center">
+                  <Bell className="mr-2 h-4 w-4" />
+                  Notifications
+                </TabsTrigger>
+                <TabsTrigger value="system" className="flex items-center">
+                  <Database className="mr-2 h-4 w-4" />
+                  System
+                </TabsTrigger>
+                <TabsTrigger value="appearance" className="flex items-center">
+                  <Palette className="mr-2 h-4 w-4" />
+                  Appearance
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Profile Settings */}
+              <TabsContent value="profile" className="space-y-6">
+                <Card data-testid="profile-settings-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <User className="mr-2 h-5 w-5" />
+                      Profile Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Form {...profileForm}>
+                      <form onSubmit={profileForm.handleSubmit((data) => updateProfileMutation.mutate(data))} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <FormField
+                            control={profileForm.control}
+                            name="name"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Full Name</FormLabel>
+                                <FormControl>
+                                  <Input {...field} data-testid="input-name" />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={profileForm.control}
+                            name="email"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Email Address</FormLabel>
+                                <FormControl>
+                                  <Input {...field} type="email" data-testid="input-email" />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={profileForm.control}
+                            name="phone"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Phone Number</FormLabel>
+                                <FormControl>
+                                  <Input {...field} type="tel" placeholder="+1 (555) 123-4567" data-testid="input-phone" />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={profileForm.control}
+                            name="timezone"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Timezone</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-timezone">
+                                      <SelectValue placeholder="Select timezone" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="UTC">UTC</SelectItem>
+                                    <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                                    <SelectItem value="America/Chicago">Central Time</SelectItem>
+                                    <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                                    <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                                    <SelectItem value="Europe/London">London</SelectItem>
+                                    <SelectItem value="Europe/Paris">Paris</SelectItem>
+                                    <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <Button type="submit" disabled={updateProfileMutation.isPending} data-testid="button-save-profile">
+                          <Save className="mr-2 h-4 w-4" />
+                          {updateProfileMutation.isPending ? "Saving..." : "Save Profile"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Security Settings */}
+              <TabsContent value="security" className="space-y-6">
+                <Card data-testid="security-settings-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Shield className="mr-2 h-5 w-5" />
+                      Change Password
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Form {...passwordForm}>
+                      <form onSubmit={passwordForm.handleSubmit((data) => updatePasswordMutation.mutate(data))} className="space-y-4">
+                        <FormField
+                          control={passwordForm.control}
+                          name="currentPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Current Password</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="password" data-testid="input-current-password" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={passwordForm.control}
+                          name="newPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>New Password</FormLabel>
+                              <FormControl>
+                                <div className="relative">
+                                  <Input 
+                                    {...field} 
+                                    type={showPassword ? "text" : "password"} 
+                                    data-testid="input-new-password" 
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    data-testid="button-toggle-password"
+                                  >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                  </Button>
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={passwordForm.control}
+                          name="confirmPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Confirm New Password</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="password" data-testid="input-confirm-password" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button type="submit" disabled={updatePasswordMutation.isPending} data-testid="button-change-password">
+                          <Shield className="mr-2 h-4 w-4" />
+                          {updatePasswordMutation.isPending ? "Changing..." : "Change Password"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center text-red-600">
+                      <AlertTriangle className="mr-2 h-5 w-5" />
+                      Danger Zone
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Alert variant="destructive" className="mb-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        Once you delete your account, there is no going back. Please be certain.
+                      </AlertDescription>
+                    </Alert>
+                    <Button variant="destructive" onClick={handleDeleteAccount} data-testid="button-delete-account">
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Account
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Notification Settings */}
+              <TabsContent value="notifications" className="space-y-6">
+                <Card data-testid="notification-settings-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Bell className="mr-2 h-5 w-5" />
+                      Notification Preferences
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Form {...notificationForm}>
+                      <form onSubmit={notificationForm.handleSubmit((data) => updateNotificationsMutation.mutate(data))} className="space-y-6">
+                        <div className="space-y-4">
+                          <FormField
+                            control={notificationForm.control}
+                            name="emailNotifications"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base flex items-center">
+                                    <Mail className="mr-2 h-4 w-4" />
+                                    Email Notifications
+                                  </FormLabel>
+                                  <FormDescription>
+                                    Receive email notifications for important updates
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-email-notifications"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={notificationForm.control}
+                            name="smsNotifications"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base flex items-center">
+                                    <Phone className="mr-2 h-4 w-4" />
+                                    SMS Notifications
+                                  </FormLabel>
+                                  <FormDescription>
+                                    Receive SMS notifications for critical alerts
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-sms-notifications"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={notificationForm.control}
+                            name="weeklyReports"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">Weekly Reports</FormLabel>
+                                  <FormDescription>
+                                    Get weekly summary reports of your CRM activity
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-weekly-reports"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={notificationForm.control}
+                            name="importAlerts"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">Import Alerts</FormLabel>
+                                  <FormDescription>
+                                    Notifications when CSV imports complete or fail
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-import-alerts"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <Button type="submit" disabled={updateNotificationsMutation.isPending} data-testid="button-save-notifications">
+                          <Save className="mr-2 h-4 w-4" />
+                          {updateNotificationsMutation.isPending ? "Saving..." : "Save Preferences"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* System Settings */}
+              <TabsContent value="system" className="space-y-6">
+                <Card data-testid="system-settings-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Database className="mr-2 h-5 w-5" />
+                      System Preferences
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Form {...systemForm}>
+                      <form onSubmit={systemForm.handleSubmit((data) => updateSystemMutation.mutate(data))} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <FormField
+                            control={systemForm.control}
+                            name="dataRetention"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Data Retention (days)</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-data-retention">
+                                      <SelectValue placeholder="Select retention period" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="30">30 days</SelectItem>
+                                    <SelectItem value="90">90 days</SelectItem>
+                                    <SelectItem value="180">180 days</SelectItem>
+                                    <SelectItem value="365">1 year</SelectItem>
+                                    <SelectItem value="never">Never delete</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={systemForm.control}
+                            name="exportFormat"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Default Export Format</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-export-format">
+                                      <SelectValue placeholder="Select format" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="csv">CSV</SelectItem>
+                                    <SelectItem value="xlsx">Excel</SelectItem>
+                                    <SelectItem value="json">JSON</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={systemForm.control}
+                            name="recordsPerPage"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Records Per Page</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-records-per-page">
+                                      <SelectValue placeholder="Select page size" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="10">10</SelectItem>
+                                    <SelectItem value="20">20</SelectItem>
+                                    <SelectItem value="50">50</SelectItem>
+                                    <SelectItem value="100">100</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <FormField
+                            control={systemForm.control}
+                            name="autoBackup"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">Auto Backup</FormLabel>
+                                  <FormDescription>
+                                    Automatically backup your data daily
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-auto-backup"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={systemForm.control}
+                            name="autoSave"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">Auto Save</FormLabel>
+                                  <FormDescription>
+                                    Automatically save changes as you type
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-auto-save"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        <Button type="submit" disabled={updateSystemMutation.isPending} data-testid="button-save-system">
+                          <Save className="mr-2 h-4 w-4" />
+                          {updateSystemMutation.isPending ? "Saving..." : "Save Settings"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Download className="mr-2 h-5 w-5" />
+                      Data Management
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <Button 
+                        onClick={() => exportDataMutation.mutate()} 
+                        disabled={exportDataMutation.isPending}
+                        data-testid="button-export-data"
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        {exportDataMutation.isPending ? "Exporting..." : "Export All Data"}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => clearCacheMutation.mutate()}
+                        disabled={clearCacheMutation.isPending}
+                        data-testid="button-clear-cache"
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Clear Cache
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Appearance Settings */}
+              <TabsContent value="appearance" className="space-y-6">
+                <Card data-testid="appearance-settings-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Palette className="mr-2 h-5 w-5" />
+                      Appearance & Display
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Form {...appearanceForm}>
+                      <form onSubmit={appearanceForm.handleSubmit((data) => updateAppearanceMutation.mutate(data))} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <FormField
+                            control={appearanceForm.control}
+                            name="theme"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Theme</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-theme">
+                                      <SelectValue placeholder="Select theme" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="light" className="flex items-center">
+                                      <Sun className="mr-2 h-4 w-4" />
+                                      Light
+                                    </SelectItem>
+                                    <SelectItem value="dark" className="flex items-center">
+                                      <Moon className="mr-2 h-4 w-4" />
+                                      Dark
+                                    </SelectItem>
+                                    <SelectItem value="system" className="flex items-center">
+                                      <Monitor className="mr-2 h-4 w-4" />
+                                      System
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={appearanceForm.control}
+                            name="fontSize"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Font Size</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-font-size">
+                                      <SelectValue placeholder="Select font size" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="small">Small</SelectItem>
+                                    <SelectItem value="medium">Medium</SelectItem>
+                                    <SelectItem value="large">Large</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <FormField
+                            control={appearanceForm.control}
+                            name="compactMode"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">Compact Mode</FormLabel>
+                                  <FormDescription>
+                                    Use a more compact layout to fit more information
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-compact-mode"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={appearanceForm.control}
+                            name="showAvatars"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">Show Avatars</FormLabel>
+                                  <FormDescription>
+                                    Display profile pictures in contact lists
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-show-avatars"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        <Button type="submit" disabled={updateAppearanceMutation.isPending} data-testid="button-save-appearance">
+                          <Save className="mr-2 h-4 w-4" />
+                          {updateAppearanceMutation.isPending ? "Saving..." : "Save Appearance"}
+                        </Button>
+                      </form>
+                    </Form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
