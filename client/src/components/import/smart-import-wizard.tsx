@@ -109,7 +109,7 @@ export function SmartImportWizard() {
   const autoMapMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('csv', file);  // Backend expects 'csv' field name
       const response = await fetch('/api/import/auto-map', {
         method: 'POST',
         body: formData,
@@ -149,8 +149,8 @@ export function SmartImportWizard() {
       if (!file) throw new Error('No file selected');
       
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('mapping', JSON.stringify(finalMapping));
+      formData.append('csv', file);  // Backend expects 'csv' field name
+      formData.append('fieldMapping', JSON.stringify(finalMapping));
       formData.append('options', JSON.stringify(importOptions));
       
       const response = await fetch('/api/import', {
