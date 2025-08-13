@@ -101,22 +101,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update contact
   app.patch("/api/contacts/:id", async (req, res) => {
     try {
-      const updates = insertContactSchema.partial().parse(req.body);
+      console.log('PATCH request body:', req.body);
       
-      // Enrich updated data
-      const enrichedUpdates = await enrichContactData(updates);
+      // Create a more lenient partial schema for updates
+      const updateSchema = insertContactSchema.partial().extend({
+        employees: z.union([z.number(), z.string(), z.null()]).optional(),
+        companyAge: z.union([z.number(), z.string(), z.null()]).optional(),
+        leadScore: z.union([z.number(), z.string(), z.null()]).optional(),
+        annualRevenue: z.union([z.number(), z.string(), z.null()]).optional(),
+        email: z.union([z.string().email(), z.string().length(0), z.null()]).optional(),
+        website: z.union([z.string().url(), z.string().length(0), z.null()]).optional(),
+        personLinkedIn: z.union([z.string().url(), z.string().length(0), z.null()]).optional(),
+        companyLinkedIn: z.union([z.string().url(), z.string().length(0), z.null()]).optional(),
+      });
       
-      const contact = await storage.updateContact(req.params.id!, enrichedUpdates);
+      const updates = updateSchema.parse(req.body);
+      console.log('Parsed updates:', updates);
+      
+      // Clean up empty strings to null for optional fields
+      const cleanedUpdates = Object.fromEntries(
+        Object.entries(updates).map(([key, value]) => [
+          key, 
+          value === '' ? null : value
+        ])
+      );
+      
+      // Skip enrichment for simple inline edits to avoid issues
+      const contact = await storage.updateContact(req.params.id!, cleanedUpdates);
       if (!contact) {
         return res.status(404).json({ message: "Contact not found" });
       }
       
+      // Log update activity
+      await storage.createContactActivity({
+        contactId: contact.id,
+        activityType: 'updated',
+        description: 'Contact updated via inline edit',
+        changes: cleanedUpdates,
+      });
+      
       res.json(contact);
     } catch (error) {
+      console.error('PATCH error:', error);
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid contact data", errors: error.errors });
+        return res.status(400).json({ 
+          message: "Invalid contact data", 
+          errors: error.errors,
+          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        });
       }
-      res.status(500).json({ message: "Failed to update contact" });
+      res.status(500).json({ message: "Failed to update contact", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
