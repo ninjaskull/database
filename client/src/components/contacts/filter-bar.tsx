@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Building2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 interface FilterBarProps {
   filters: {
@@ -28,12 +29,9 @@ export function FilterBar({ filters, onFiltersChange, selectedCount, onBulkEdit,
 
   const bulkAutoFillMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/contacts/bulk-autofill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+      return await apiRequest('/api/contacts/bulk-autofill', {
+        method: 'POST'
       });
-      if (!response.ok) throw new Error('Failed to perform bulk auto-fill');
-      return response.json();
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
