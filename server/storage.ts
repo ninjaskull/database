@@ -16,7 +16,7 @@ import {
   type InsertSession
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, ilike, desc, asc, count, sql } from "drizzle-orm";
+import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
 
 export interface IStorage {
   // Contact operations
@@ -433,26 +433,57 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount || 0;
   }
 
-  // Fix empty fullNames for existing contacts
+  // Fix empty or incorrectly mapped fullNames for existing contacts
   async fixEmptyFullNames(): Promise<number> {
-    // Get all contacts with empty or null fullName but have firstName or lastName
+    console.log('🔧 Starting comprehensive full name fix process...');
+    
+    // Get all contacts with issues in fullName mapping
     const contactsToFix = await db
       .select()
       .from(contacts)
       .where(
         and(
           eq(contacts.isDeleted, false),
-          sql`(${contacts.fullName} IS NULL OR TRIM(${contacts.fullName}) = '')`,
+          or(
+            // Empty or null fullName
+            sql`(${contacts.fullName} IS NULL OR TRIM(${contacts.fullName}) = '')`,
+            // Hex ID pattern (MongoDB ObjectId-like strings)
+            sql`${contacts.fullName} ~ '^[a-f0-9]{24}$'`,
+            // Other ID-like patterns
+            sql`${contacts.fullName} ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'`,
+            // Incorrect mapping when both names exist
+            and(
+              isNotNull(contacts.firstName),
+              isNotNull(contacts.lastName),
+              sql`${contacts.fullName} != TRIM(${contacts.firstName}) || ' ' || TRIM(${contacts.lastName})`
+            ),
+            // Incorrect mapping when only firstName exists
+            and(
+              isNotNull(contacts.firstName),
+              isNull(contacts.lastName),
+              sql`${contacts.fullName} != TRIM(${contacts.firstName})`
+            ),
+            // Incorrect mapping when only lastName exists  
+            and(
+              isNull(contacts.firstName),
+              isNotNull(contacts.lastName),
+              sql`${contacts.fullName} != TRIM(${contacts.lastName})`
+            )
+          ),
+          // Only fix if we have name data to work with
           sql`(${contacts.firstName} IS NOT NULL OR ${contacts.lastName} IS NOT NULL)`
         )
       );
 
+    console.log(`📊 Found ${contactsToFix.length} contacts with missing/incorrect full names`);
+
     let fixedCount = 0;
     
     for (const contact of contactsToFix) {
-      const newFullName = generateFullName(contact.firstName, contact.lastName, contact.fullName);
+      const oldFullName = contact.fullName;
+      const newFullName = generateFullName(contact.firstName, contact.lastName, null);
       
-      if (newFullName && newFullName.trim()) {
+      if (newFullName && newFullName.trim() && newFullName !== oldFullName) {
         await db
           .update(contacts)
           .set({ 
@@ -461,11 +492,13 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(contacts.id, contact.id));
           
+        console.log(`✅ Fixed: "${oldFullName}" → "${newFullName}" (${contact.email})`);
+        
         // Log activity for this fix
         await this.createContactActivity({
           contactId: contact.id,
           activityType: 'updated',
-          description: 'Auto-generated full name from first/last name',
+          description: `Fixed full name mapping from "${oldFullName}" to "${newFullName}"`,
           changes: { fullName: newFullName }
         });
         
@@ -473,6 +506,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
+    console.log(`🎉 Fixed ${fixedCount} contact full names`);
     return fixedCount;
   }
 }

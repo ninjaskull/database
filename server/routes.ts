@@ -705,6 +705,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fix incorrectly mapped full names
+  app.post("/api/fix-fullnames", async (req, res) => {
+    try {
+      console.log('🔧 Manual full name fix requested');
+      const fixedCount = await storage.fixEmptyFullNames();
+      res.json({ 
+        success: true, 
+        fixedCount,
+        message: `Successfully fixed ${fixedCount} contact full names` 
+      });
+    } catch (error) {
+      console.error("Error fixing full names:", error);
+      res.status(500).json({ 
+        error: "Failed to fix full names",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Export contacts
   app.get("/api/export", async (req, res) => {
     try {

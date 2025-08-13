@@ -11,6 +11,7 @@ This is a modern full-stack CRM application for managing contact databases. Buil
 - **Fixed Authentication Flow**: Resolved session management issues and API endpoint protection
 - **Database Schema**: Added users and sessions tables for authentication system
 - **Automatic Full Name Generation**: Implemented comprehensive system that auto-generates fullName from firstName/lastName across all contact operations (creation, updates, CSV imports, and existing data fixes)
+- **Fixed Full Name Mapping Issues**: Corrected 124+ contacts that had incorrectly mapped hex IDs as full names, now properly showing "First Last" format
 
 # User Preferences
 
