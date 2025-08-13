@@ -12,6 +12,9 @@ This is a modern full-stack CRM application for managing contact databases. Buil
 - **Database Schema**: Added users and sessions tables for authentication system
 - **Automatic Full Name Generation**: Implemented comprehensive system that auto-generates fullName from firstName/lastName across all contact operations (creation, updates, CSV imports, and existing data fixes)
 - **Fixed Full Name Mapping Issues**: Corrected 124+ contacts that had incorrectly mapped hex IDs as full names, now properly showing "First Last" format
+- **Smart Company Details Management**: Implemented intelligent auto-fill system that automatically populates company information for new contacts based on existing data from the same organization
+- **Company Template API**: Added endpoint to fetch company templates and preview auto-fillable fields before contact creation
+- **Enhanced Contact Forms**: Integrated real-time company auto-fill suggestions with visual indicators and one-click application in contact dialog
 
 # User Preferences
 
@@ -51,6 +54,8 @@ Preferred communication style: Simple, everyday language.
 - **Responsive Design**: Mobile-first design with adaptive layouts
 - **Advanced Filtering**: Multi-criteria search and filtering with live backend updates
 - **Data Integrity Tools**: Built-in utilities to fix existing data inconsistencies automatically
+- **Smart Company Auto-Fill**: Intelligent system that detects existing company data and auto-fills company details (address, industry, website, technologies, revenue, etc.) for new contacts from the same organization
+- **Company Intelligence**: Scores and ranks existing company records to provide the most complete and accurate template data for auto-filling
 
 ## External Dependencies
 

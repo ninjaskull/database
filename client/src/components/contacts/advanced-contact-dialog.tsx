@@ -91,6 +91,8 @@ interface AdvancedContactDialogProps {
 export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialMode }: AdvancedContactDialogProps) {
   const [mode, setMode] = useState<'view' | 'edit'>(initialMode);
   const [technologyInput, setTechnologyInput] = useState("");
+  const [companyTemplate, setCompanyTemplate] = useState<any>(null);
+  const [autoFillSuggestions, setAutoFillSuggestions] = useState<string[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -136,6 +138,7 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
   // Watch for employee count changes and auto-update size bracket
   const watchedEmployees = form.watch('employees');
   const currentBracket = form.watch('employeeSizeBracket');
+  const watchedCompany = form.watch('company');
 
   useEffect(() => {
     if (mode === 'edit' && watchedEmployees) {
@@ -146,23 +149,104 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
     }
   }, [watchedEmployees, mode, form, currentBracket]);
 
+  // Watch for company changes and fetch auto-fill suggestions
+  useEffect(() => {
+    const fetchCompanyTemplate = async () => {
+      if (mode === 'edit' && watchedCompany && watchedCompany.trim() && !contact?.id) {
+        try {
+          const response = await fetch(`/api/companies/${encodeURIComponent(watchedCompany.trim())}/template`);
+          if (response.ok) {
+            const result = await response.json();
+            if (result.success && result.template) {
+              setCompanyTemplate(result.template);
+              setAutoFillSuggestions(result.autoFillableFields || []);
+              
+              // Show notification about available auto-fill
+              toast({
+                title: "Company auto-fill available",
+                description: `Found ${result.autoFillableFields?.length || 0} fields that can be auto-filled from existing company data.`,
+              });
+            } else {
+              setCompanyTemplate(null);
+              setAutoFillSuggestions([]);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch company template:', error);
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(fetchCompanyTemplate, 500); // Debounce API calls
+    return () => clearTimeout(timeoutId);
+  }, [watchedCompany, mode, contact?.id, toast]);
+
+  // Auto-fill company data
+  const applyCompanyAutoFill = () => {
+    if (!companyTemplate) return;
+
+    const currentValues = form.getValues();
+    let appliedFields: string[] = [];
+
+    Object.entries(companyTemplate).forEach(([field, value]) => {
+      const currentValue = (currentValues as any)[field];
+      
+      // Only fill empty fields
+      if ((!currentValue || currentValue === '') && value !== null && value !== undefined) {
+        form.setValue(field as any, value);
+        appliedFields.push(field);
+      }
+    });
+
+    if (appliedFields.length > 0) {
+      toast({
+        title: "Company details auto-filled",
+        description: `Applied ${appliedFields.length} fields: ${appliedFields.join(', ')}`,
+      });
+      setAutoFillSuggestions([]);
+      setCompanyTemplate(null);
+    }
+  };
+
   const updateContactMutation = useMutation({
     mutationFn: async (data: ContactEditForm) => {
-      const response = await fetch(`/api/contacts/${contact.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error('Failed to update contact');
-      return response.json();
+      if (!contact?.id) {
+        // Creating new contact
+        const response = await fetch('/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!response.ok) throw new Error('Failed to create contact');
+        return response.json();
+      } else {
+        // Updating existing contact
+        const response = await fetch(`/api/contacts/${contact.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!response.ok) throw new Error('Failed to update contact');
+        return response.json();
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
-      toast({ title: "Contact updated successfully" });
-      setMode('view');
+      toast({ 
+        title: contact?.id ? "Contact updated successfully" : "Contact created successfully",
+        description: contact?.id ? undefined : "Company details were automatically filled from existing data."
+      });
+      if (!contact?.id) {
+        onClose(); // Close dialog for new contacts
+      } else {
+        setMode('view'); // Switch to view mode for updates
+      }
     },
     onError: () => {
-      toast({ title: "Failed to update contact", variant: "destructive" });
+      toast({ 
+        title: contact?.id ? "Failed to update contact" : "Failed to create contact", 
+        variant: "destructive" 
+      });
     },
   });
 
@@ -200,12 +284,17 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
                 <span className="text-lg font-semibold text-blue-600 dark:text-blue-400">
-                  {contact.fullName?.charAt(0) || contact.firstName?.charAt(0) || '?'}
+                  {contact?.fullName?.charAt(0) || contact?.firstName?.charAt(0) || '+'}
                 </span>
               </div>
               <div>
-                <h2 className="text-xl font-bold">{contact.fullName}</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{contact.title} {contact.company && `at ${contact.company}`}</p>
+                <h2 className="text-xl font-bold">{contact?.fullName || 'New Contact'}</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {contact?.title && `${contact.title}`} 
+                  {contact?.company && contact?.title && ` at `}
+                  {contact?.company}
+                  {!contact?.title && !contact?.company && 'Add contact information below'}
+                </p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -227,10 +316,10 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                     {updateContactMutation.isPending ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                        Saving...
+                        {contact?.id ? 'Saving...' : 'Creating...'}
                       </>
                     ) : (
-                      'Save Changes'
+                      contact?.id ? 'Save Changes' : 'Create Contact'
                     )}
                   </Button>
                 </div>
@@ -439,6 +528,34 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                             </FormItem>
                           )}
                         />
+
+                        {/* Company Auto-fill Suggestion */}
+                        {autoFillSuggestions.length > 0 && companyTemplate && mode === 'edit' && (
+                          <div className="col-span-2">
+                            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                  <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                    Company data found: {autoFillSuggestions.length} fields available
+                                  </span>
+                                </div>
+                                <Button 
+                                  type="button" 
+                                  size="sm" 
+                                  onClick={applyCompanyAutoFill}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                  data-testid="button-apply-autofill"
+                                >
+                                  Auto-fill Company Details
+                                </Button>
+                              </div>
+                              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                                Fields: {autoFillSuggestions.filter(f => f !== 'company').join(', ')}
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         <FormField
                           control={form.control}

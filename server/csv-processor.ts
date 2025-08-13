@@ -376,7 +376,7 @@ export class AdvancedCSVProcessor {
       
       for (const contact of chunk) {
         try {
-          const created = await storage.createContact(contact);
+          const created = await storage.createContactWithAutoFill(contact);
           createdContacts.push(created);
         } catch (error) {
           console.error('Failed to create contact:', error);

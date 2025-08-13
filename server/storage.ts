@@ -69,6 +69,10 @@ export interface IStorage {
   
   // Utility operations
   fixEmptyFullNames(): Promise<number>;
+  
+  // Company details auto-fill operations
+  getCompanyTemplate(companyName: string): Promise<Partial<Contact> | null>;
+  createContactWithAutoFill(contact: InsertContact): Promise<Contact>;
 }
 
 // Utility function to generate full name from first and last name
@@ -508,6 +512,120 @@ export class DatabaseStorage implements IStorage {
     
     console.log(`🎉 Fixed ${fixedCount} contact full names`);
     return fixedCount;
+  }
+
+  // Company details auto-fill functionality
+  async getCompanyTemplate(companyName: string): Promise<Partial<Contact> | null> {
+    if (!companyName || !companyName.trim()) return null;
+
+    // Find the most complete company record (one with the most filled fields)
+    const companyContacts = await db
+      .select()
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        eq(contacts.company, companyName.trim())
+      ))
+      .orderBy(desc(contacts.createdAt));
+
+    if (companyContacts.length === 0) return null;
+
+    // Score each contact based on how much company info they have
+    const scoredContacts = companyContacts.map(contact => {
+      let score = 0;
+      const companyFields = [
+        'company', 'employees', 'employeeSizeBracket', 'industry', 'website', 
+        'companyLinkedIn', 'technologies', 'annualRevenue', 'companyAddress', 
+        'companyCity', 'companyState', 'companyCountry', 'companyAge', 
+        'technologyCategory', 'businessType'
+      ];
+
+      companyFields.forEach(field => {
+        const value = contact[field as keyof Contact];
+        if (value !== null && value !== undefined && value !== '') {
+          if (Array.isArray(value) && value.length > 0) score++;
+          else if (!Array.isArray(value)) score++;
+        }
+      });
+
+      return { contact, score };
+    });
+
+    // Get the contact with the highest score (most complete company info)
+    const bestContact = scoredContacts.reduce((best, current) => 
+      current.score > best.score ? current : best
+    ).contact;
+
+    // Extract only company-related fields for the template
+    const companyTemplate: Partial<Contact> = {};
+    const companyFields = [
+      'company', 'employees', 'employeeSizeBracket', 'industry', 'website', 
+      'companyLinkedIn', 'technologies', 'annualRevenue', 'companyAddress', 
+      'companyCity', 'companyState', 'companyCountry', 'companyAge', 
+      'technologyCategory', 'businessType'
+    ] as const;
+
+    companyFields.forEach(field => {
+      const value = bestContact[field];
+      if (value !== null && value !== undefined && value !== '') {
+        (companyTemplate as any)[field] = value;
+      }
+    });
+
+    return Object.keys(companyTemplate).length > 1 ? companyTemplate : null; // At least company name + 1 more field
+  }
+
+  async createContactWithAutoFill(insertContact: InsertContact): Promise<Contact> {
+    let contactData = { ...insertContact };
+    let autoFilledFields: string[] = [];
+
+    // If company name is provided, try to auto-fill company details
+    if (contactData.company && contactData.company.trim()) {
+      const companyTemplate = await this.getCompanyTemplate(contactData.company);
+      
+      if (companyTemplate) {
+        // Only auto-fill fields that are empty/null in the new contact
+        const fieldsToFill = Object.keys(companyTemplate) as Array<keyof Partial<Contact>>;
+        
+        fieldsToFill.forEach(field => {
+          const existingValue = contactData[field as keyof InsertContact];
+          const templateValue = companyTemplate[field];
+          
+          // Only fill if the field is empty and we have template data
+          if ((!existingValue || existingValue === '') && templateValue !== null && templateValue !== undefined) {
+            (contactData as any)[field] = templateValue;
+            autoFilledFields.push(field as string);
+          }
+        });
+      }
+    }
+
+    // Auto-generate fullName if not provided
+    const finalContactData = {
+      ...contactData,
+      fullName: generateFullName(contactData.firstName, contactData.lastName, contactData.fullName),
+      updatedAt: new Date(),
+    };
+    
+    const [contact] = await db
+      .insert(contacts)
+      .values(finalContactData)
+      .returning();
+    
+    // Log activity with auto-fill information
+    let activityDescription = 'Contact added to database';
+    if (autoFilledFields.length > 0) {
+      activityDescription += ` with auto-filled company details: ${autoFilledFields.join(', ')}`;
+    }
+    
+    await this.createContactActivity({
+      contactId: contact.id,
+      activityType: 'created',
+      description: activityDescription,
+      changes: autoFilledFields.length > 0 ? { autoFilledFields } : undefined,
+    });
+    
+    return contact;
   }
 }
 

@@ -343,7 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Enrich data
       const enrichedData = await enrichContactData(validatedData);
       
-      const contact = await storage.createContact(enrichedData);
+      const contact = await storage.createContactWithAutoFill(enrichedData);
       
       // Log enrichment activity
       await storage.createContactActivity({
@@ -781,6 +781,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.send(csv);
     } catch (error) {
       res.status(500).json({ message: "Failed to export contacts" });
+    }
+  });
+
+  // Get company template for auto-fill preview
+  app.get("/api/companies/:companyName/template", requireAuth, async (req, res) => {
+    try {
+      const companyName = decodeURIComponent(req.params.companyName);
+      const template = await storage.getCompanyTemplate(companyName);
+      
+      if (!template) {
+        return res.json({ 
+          success: false, 
+          message: "No existing company data found for auto-fill",
+          template: null
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Company template found with ${Object.keys(template).length} auto-fillable fields`,
+        template,
+        autoFillableFields: Object.keys(template)
+      });
+    } catch (error) {
+      console.error('Get company template error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to get company template" 
+      });
     }
   });
 
