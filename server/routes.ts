@@ -182,6 +182,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk update contacts
+  app.patch("/api/contacts/bulk-update", async (req, res) => {
+    try {
+      const { contactIds, updates } = req.body;
+      
+      if (!Array.isArray(contactIds) || contactIds.length === 0) {
+        return res.status(400).json({ message: "Invalid or empty contact IDs array" });
+      }
+      
+      if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ message: "Invalid updates object" });
+      }
+      
+      // Create schema for bulk updates (only allow certain fields)
+      const bulkUpdateSchema = z.object({
+        industry: z.string().optional(),
+        employeeSizeBracket: z.string().optional(),
+        country: z.string().optional(),
+        leadScore: z.union([z.number(), z.string()]).transform(val => {
+          const num = typeof val === 'string' ? parseInt(val) : val;
+          return !isNaN(num) && num >= 0 && num <= 100 ? num : undefined;
+        }).optional(),
+      });
+      
+      const validatedUpdates = bulkUpdateSchema.parse(updates);
+      
+      // Remove undefined values
+      const cleanUpdates = Object.fromEntries(
+        Object.entries(validatedUpdates).filter(([_, value]) => value !== undefined)
+      );
+      
+      if (Object.keys(cleanUpdates).length === 0) {
+        return res.status(400).json({ message: "No valid updates provided" });
+      }
+      
+      let updatedCount = 0;
+      const errors: string[] = [];
+      
+      // Update each contact
+      for (const contactId of contactIds) {
+        try {
+          const contact = await storage.updateContact(contactId, cleanUpdates);
+          if (contact) {
+            updatedCount++;
+            // Log bulk update activity
+            await storage.createContactActivity({
+              contactId: contact.id,
+              activityType: 'updated',
+              description: 'Contact updated via bulk edit',
+              changes: cleanUpdates,
+            });
+          }
+        } catch (error) {
+          errors.push(`Failed to update contact ${contactId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json({ 
+        updatedCount,
+        totalRequested: contactIds.length,
+        errors: errors.length > 0 ? errors : undefined
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid update data", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to bulk update contacts" });
+    }
+  });
+
   // Get contact stats  
   app.get("/api/stats", async (req, res) => {
     try {
