@@ -7,7 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { FieldMapping } from "./field-mapping";
 import { AutoMapping } from "./auto-mapping";
-import { parseCSV } from "@/lib/csv-parser";
+import { AdvancedUploader } from "./advanced-uploader";
+import { PerformanceMetrics } from "./performance-metrics";
 import { apiRequest } from "@/lib/queryClient";
 import type { ImportJob } from "@shared/schema";
 
@@ -15,7 +16,7 @@ type ImportStep = 'upload' | 'auto-mapping' | 'mapping' | 'progress' | 'complete
 
 export function ImportModal() {
   const [step, setStep] = useState<ImportStep>('upload');
-  const [csvData, setCsvData] = useState<{ headers: string[]; rows: any[][] } | null>(null);
+  // Removed csvData state - now using direct file processing with temp files
   const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
   const [autoMappingData, setAutoMappingData] = useState<any>(null);
   const [importOptions, setImportOptions] = useState({
@@ -24,7 +25,7 @@ export function ImportModal() {
     autoEnrich: true,
   });
   const [jobId, setJobId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Removed fileInputRef - now handled by AdvancedUploader component
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -39,34 +40,7 @@ export function ImportModal() {
     refetchInterval: 1000,
   });
 
-  const autoMapMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      const response = await fetch('/api/import/auto-map', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(`Auto-mapping failed: ${response.status}`);
-      }
-      return await response.json();
-    },
-    onSuccess: (data) => {
-      setAutoMappingData(data);
-      setFieldMapping(data.autoMapping);
-      setStep('auto-mapping');
-      toast({
-        title: "Smart mapping complete",
-        description: `Automatically mapped ${Object.keys(data.autoMapping).length} fields using NLP analysis.`,
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Auto-mapping failed",
-        description: "There was an error analyzing your file.",
-        variant: "destructive",
-      });
-    },
-  });
+  // Auto-mapping now handled by AdvancedUploader component
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -96,62 +70,17 @@ export function ImportModal() {
     },
   });
 
-  const handleFileSelect = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please select a CSV file.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (file.size > 50 * 1024 * 1024) { // 50MB limit
-      toast({
-        title: "File too large",
-        description: "Please select a file smaller than 50MB.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Use auto-mapping API for intelligent field detection
-    const formData = new FormData();
-    formData.append('csv', file);
-    
-    autoMapMutation.mutate(formData);
-  };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
-    }
-  };
-
-  const handleDrop = (event: React.DragEvent) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
-    }
-  };
-
-  const handleDragOver = (event: React.DragEvent) => {
-    event.preventDefault();
-  };
+  // File handling now managed by AdvancedUploader component
 
   const startImport = () => {
-    if (!csvData) return;
+    if (!autoMappingData) return;
 
+    // Use the temp file from auto-mapping for ultra-fast processing
     const formData = new FormData();
-    const csvContent = [
-      csvData.headers.join(','),
-      ...csvData.rows.map(row => row.join(','))
-    ].join('\n');
     
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    formData.append('csv', blob, 'import.csv');
+    // Create a reference to the already uploaded file
+    const tempFileRef = new Blob([autoMappingData.tempFile], { type: 'text/plain' });
+    formData.append('csv', tempFileRef, autoMappingData.tempFile);
     formData.append('fieldMapping', JSON.stringify(fieldMapping));
     formData.append('options', JSON.stringify(importOptions));
 
@@ -160,13 +89,9 @@ export function ImportModal() {
 
   const resetImport = () => {
     setStep('upload');
-    setCsvData(null);
     setFieldMapping({});
     setAutoMappingData(null);
     setJobId(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   // Check if import is complete
@@ -184,30 +109,15 @@ export function ImportModal() {
       </CardHeader>
       <CardContent className="space-y-6">
         {step === 'upload' && (
-          <div>
-            <div
-              className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <i className="fas fa-cloud-upload-alt text-4xl text-gray-400 dark:text-gray-500 mb-4"></i>
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                <p className="mb-2">Drag and drop your CSV file here, or</p>
-                <button className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
-                  browse to choose a file
-                </button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400">Support for CSV files up to 50MB</p>
-            </div>
-          </div>
+          <AdvancedUploader
+            onFileAnalyzed={(data) => {
+              setAutoMappingData(data);
+              setFieldMapping(data.autoMapping);
+              setStep('auto-mapping');
+            }}
+            maxSize={100 * 1024 * 1024} // 100MB for ultra-fast processing
+            acceptedTypes={['.csv']}
+          />
         )}
 
         {step === 'auto-mapping' && autoMappingData && (
@@ -270,30 +180,23 @@ export function ImportModal() {
         )}
 
         {step === 'progress' && (
-          <div>
-            <h4 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-4">
-              Importing Contacts...
-            </h4>
-            <Progress 
-              value={(importJob?.processedRows || 0) / (importJob?.totalRows || 1) * 100} 
-              className="w-full mb-4" 
-            />
-            <div className="text-sm text-gray-600 dark:text-gray-400 text-center">
-              <p>Processing {importJob?.processedRows || 0} of {importJob?.totalRows || 0} contacts...</p>
-              <p className="mt-2">
-                <span className="text-green-600 dark:text-green-400 font-medium">
-                  {importJob?.successfulRows || 0} successful
-                </span>
-                {' | '}
-                <span className="text-red-600 dark:text-red-400 font-medium">
-                  {importJob?.errorRows || 0} errors
-                </span>
-                {' | '}
-                <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                  {importJob?.duplicateRows || 0} duplicates
-                </span>
-              </p>
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="text-lg font-medium text-gray-800 dark:text-gray-200">
+                {importJob?.status === 'completed' ? '🚀 Ultra-Fast Import Completed' : '⚡ Advanced Processing...'}
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {importJob?.filename}
+              </div>
             </div>
+
+            <PerformanceMetrics 
+              importJob={importJob}
+              estimatedTime={autoMappingData?.estimatedProcessingTime}
+              actualTime={importJob?.completedAt && importJob?.createdAt ? 
+                Math.round((new Date(importJob.completedAt).getTime() - new Date(importJob.createdAt).getTime()) / 1000) : undefined
+              }
+            />
           </div>
         )}
 
