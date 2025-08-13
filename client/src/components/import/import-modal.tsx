@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FieldMapping } from "./field-mapping";
 import { parseCSV } from "@/lib/csv-parser";
 import { apiRequest } from "@/lib/queryClient";
+import type { ImportJob } from "@shared/schema";
 
 type ImportStep = 'upload' | 'mapping' | 'progress' | 'complete';
 
@@ -25,7 +26,7 @@ export function ImportModal() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: importJob } = useQuery({
+  const { data: importJob } = useQuery<ImportJob>({
     queryKey: ['/api/import', jobId],
     enabled: !!jobId && step === 'progress',
     refetchInterval: 1000,

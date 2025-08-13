@@ -42,7 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get single contact
   app.get("/api/contacts/:id", async (req, res) => {
     try {
-      const contact = await storage.getContact(req.params.id);
+      const contact = await storage.getContact(req.params.id!);
       if (!contact) {
         return res.status(404).json({ message: "Contact not found" });
       }
@@ -97,7 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Enrich updated data
       const enrichedUpdates = await enrichContactData(updates);
       
-      const contact = await storage.updateContact(req.params.id, enrichedUpdates);
+      const contact = await storage.updateContact(req.params.id!, enrichedUpdates);
       if (!contact) {
         return res.status(404).json({ message: "Contact not found" });
       }
@@ -265,31 +265,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 async function processCSVFile(filePath: string, jobId: string, options: any) {
-  // This would be implemented with actual CSV parsing logic
-  // For now, we'll simulate the process
+  const fs = await import('fs');
   
   try {
+    // Read CSV file
+    const csvText = fs.readFileSync(filePath, 'utf8');
+    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+    
+    if (lines.length === 0) {
+      throw new Error('Empty CSV file');
+    }
+    
+    // Parse headers
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+    const dataRows = lines.slice(1);
+    
     await storage.updateImportJob(jobId, {
       status: 'processing',
-      totalRows: 100, // This would come from actual CSV parsing
+      totalRows: dataRows.length,
     });
-
-    // Simulate processing...
-    setTimeout(async () => {
-      await storage.updateImportJob(jobId, {
-        status: 'completed',
-        processedRows: 100,
-        successfulRows: 95,
-        errorRows: 3,
-        duplicateRows: 2,
-        completedAt: new Date(),
-      });
-    }, 5000);
+    
+    const fieldMapping = JSON.parse(options.fieldMapping || '{}');
+    let processed = 0;
+    let successful = 0;
+    let errors = 0;
+    let duplicates = 0;
+    
+    // Process each row
+    for (const line of dataRows) {
+      try {
+        const values = line.split(',').map(v => v.replace(/"/g, '').trim());
+        const contactData: any = {};
+        
+        // Map CSV fields to database fields
+        headers.forEach((header, index) => {
+          const dbField = fieldMapping[header];
+          if (dbField && values[index]) {
+            contactData[dbField] = values[index];
+          }
+        });
+        
+        if (contactData.email) {
+          // Check for duplicates
+          const duplicateContacts = await storage.findDuplicateContacts(contactData.email, contactData.company);
+          if (duplicateContacts.length > 0) {
+            duplicates++;
+            processed++;
+            continue;
+          }
+        }
+        
+        // Ensure required fields
+        if (!contactData.fullName && !contactData.firstName && !contactData.lastName) {
+          errors++;
+          processed++;
+          continue;
+        }
+        
+        // Set fullName if not provided
+        if (!contactData.fullName && (contactData.firstName || contactData.lastName)) {
+          contactData.fullName = `${contactData.firstName || ''} ${contactData.lastName || ''}`.trim();
+        }
+        
+        // Enrich and create contact
+        const enrichedData = await enrichContactData(contactData);
+        const newContact = await storage.createContact(enrichedData);
+        console.log(`Created contact: ${newContact.fullName}`);
+        successful++;
+        
+      } catch (error) {
+        errors++;
+      }
+      processed++;
+      
+      // Update progress every 10 rows
+      if (processed % 10 === 0) {
+        await storage.updateImportJob(jobId, {
+          processedRows: processed,
+          successfulRows: successful,
+          errorRows: errors,
+          duplicateRows: duplicates,
+        });
+      }
+    }
+    
+    // Final update
+    await storage.updateImportJob(jobId, {
+      status: 'completed',
+      processedRows: processed,
+      successfulRows: successful,
+      errorRows: errors,
+      duplicateRows: duplicates,
+      completedAt: new Date(),
+    });
+    
+    // Clean up temp file
+    fs.unlinkSync(filePath);
     
   } catch (error) {
     await storage.updateImportJob(jobId, {
       status: 'failed',
-      errors: { message: 'Processing failed' },
+      errors: { message: error instanceof Error ? error.message : 'Processing failed' },
       completedAt: new Date(),
     });
   }
