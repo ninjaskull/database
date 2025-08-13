@@ -76,6 +76,9 @@ export function FilterBar({ filters, onFiltersChange, selectedCount, onBulkEdit,
                 <SelectItem value="United Kingdom">United Kingdom</SelectItem>
                 <SelectItem value="Germany">Germany</SelectItem>
                 <SelectItem value="Canada">Canada</SelectItem>
+                <SelectItem value="Japan">Japan</SelectItem>
+                <SelectItem value="India">India</SelectItem>
+                <SelectItem value="Australia">Australia</SelectItem>
               </SelectContent>
             </Select>
           </div>

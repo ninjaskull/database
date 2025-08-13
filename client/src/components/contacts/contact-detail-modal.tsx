@@ -18,9 +18,14 @@ export function ContactDetailModal({ contact, isOpen, onClose }: ContactDetailMo
   const [activeTab, setActiveTab] = useState("overview");
 
   const { data: activities } = useQuery({
-    queryKey: ['/api/contacts', contact.id, 'activities'],
+    queryKey: ['activities', contact.id],
+    queryFn: async () => {
+      const response = await fetch(`/api/contacts/${contact.id}/activities`);
+      if (!response.ok) throw new Error('Failed to fetch activities');
+      return response.json();
+    },
     enabled: isOpen && activeTab === 'activity',
-  });
+  }) as { data?: ContactActivity[] };
 
   const getInitials = (name: string) => {
     return name

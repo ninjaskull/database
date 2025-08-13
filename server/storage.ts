@@ -114,7 +114,7 @@ export class DatabaseStorage implements IStorage {
       return contactColumns.includes(key as keyof typeof contacts);
     };
     const sortColumn = isValidColumn(sortBy) ? contacts[sortBy] : contacts.createdAt;
-    const orderBy = sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn);
+    const orderBy = sortOrder === 'asc' ? asc(sortColumn!) : desc(sortColumn!);
     
     const contactsList = await db
       .select()
@@ -198,25 +198,15 @@ export class DatabaseStorage implements IStorage {
   async bulkDeleteContacts(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
     
-    const deleted = await db
-      .update(contacts)
-      .set({ isDeleted: true, updatedAt: new Date() })
-      .where(and(
-        sql`${contacts.id} = ANY(${ids})`,
-        eq(contacts.isDeleted, false)
-      ))
-      .returning({ id: contacts.id });
+    let deletedCount = 0;
     
-    // Log activities
-    for (const contact of deleted) {
-      await this.createContactActivity({
-        contactId: contact.id,
-        activityType: 'deleted',
-        description: 'Contact bulk deleted',
-      });
+    // Delete each contact individually to ensure proper logging
+    for (const id of ids) {
+      const success = await this.deleteContact(id);
+      if (success) deletedCount++;
     }
     
-    return deleted.length;
+    return deletedCount;
   }
 
   async findDuplicateContacts(email: string, company?: string): Promise<Contact[]> {

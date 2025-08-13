@@ -36,7 +36,22 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
   );
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/contacts', page, limit, cleanFilters, sortBy, sortOrder],
+    queryKey: ['contacts', page, limit, cleanFilters, sortBy, sortOrder],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        sortBy,
+        sortOrder,
+        ...cleanFilters
+      });
+      
+      const response = await fetch(`/api/contacts?${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch contacts');
+      }
+      return response.json();
+    }
   }) as { data?: { contacts: Contact[], total: number }, isLoading: boolean, error: any };
 
   const handleSort = (column: string) => {
@@ -223,6 +238,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                     </TableCell>
                     <TableCell className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-800 dark:text-gray-200">{contact.email || 'No email'}</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{contact.country || contact.countryCode || 'Unknown'}</div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">{contact.mobilePhone || 'No phone'}</div>
                     </TableCell>
                     <TableCell className="px-6 py-4 whitespace-nowrap">
@@ -251,10 +267,37 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                       <Button variant="ghost" size="sm" onClick={() => setSelectedContact(contact)} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
                         <i className="fas fa-eye"></i>
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                        onClick={() => {
+                          const updatedName = prompt('Edit contact name:', contact.fullName || '');
+                          if (updatedName && updatedName !== contact.fullName) {
+                            // Inline edit implementation
+                            fetch(`/api/contacts/${contact.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ fullName: updatedName })
+                            }).then(() => window.location.reload());
+                          }
+                        }}
+                        data-testid={`button-edit-${contact.id}`}
+                      >
                         <i className="fas fa-edit"></i>
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        onClick={async () => {
+                          if (confirm(`Delete ${contact.fullName}?`)) {
+                            await fetch(`/api/contacts/${contact.id}`, { method: 'DELETE' });
+                            window.location.reload();
+                          }
+                        }}
+                        data-testid={`button-delete-${contact.id}`}
+                      >
                         <i className="fas fa-trash"></i>
                       </Button>
                     </TableCell>
