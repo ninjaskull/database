@@ -85,8 +85,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req as any).user.id;
       
       // Update user profile in database
-      // For now, just return success as the storage doesn't have update user method
-      res.json({ success: true, message: "Profile updated successfully" });
+      const updatedUser = await storage.updateUser(userId, {
+        name,
+        email,
+      });
+      
+      if (updatedUser) {
+        res.json({ 
+          success: true, 
+          message: "Profile updated successfully",
+          user: {
+            id: updatedUser.id,
+            name: updatedUser.name,
+            email: updatedUser.email
+          }
+        });
+      } else {
+        res.status(404).json({ message: "User not found" });
+      }
     } catch (error) {
       res.status(500).json({ message: "Failed to update profile" });
     }
@@ -97,10 +113,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { currentPassword, newPassword } = req.body;
       const userId = (req as any).user.id;
       
-      // Verify current password and update with new password
-      // For now, just return success
-      res.json({ success: true, message: "Password updated successfully" });
+      // Get current user
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Verify current password
+      const bcrypt = require("bcrypt");
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+      
+      // Hash new password and update
+      const hashedNewPassword = await bcrypt.hash(newPassword, 12);
+      const updatedUser = await storage.updateUser(userId, {
+        passwordHash: hashedNewPassword,
+      });
+      
+      if (updatedUser) {
+        res.json({ success: true, message: "Password updated successfully" });
+      } else {
+        res.status(404).json({ message: "Failed to update password" });
+      }
     } catch (error) {
+      console.error('Password update error:', error);
       res.status(500).json({ message: "Failed to update password" });
     }
   });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -86,13 +86,26 @@ export default function SettingsPage() {
   const profileForm = useForm<ProfileData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      name: (user as any)?.name || "Amit",
-      email: (user as any)?.email || "amit@fallowl.com",
+      name: "",
+      email: "",
       phone: "",
       timezone: "UTC",
       language: "en",
     },
   });
+
+  // Update form values when user data changes
+  React.useEffect(() => {
+    if (user) {
+      profileForm.reset({
+        name: (user as any)?.name || "",
+        email: (user as any)?.email || "",
+        phone: "",
+        timezone: "UTC", 
+        language: "en",
+      });
+    }
+  }, [user, profileForm]);
 
   // Password form
   const passwordForm = useForm<PasswordData>({
@@ -152,6 +165,16 @@ export default function SettingsPage() {
     },
     onSuccess: (response) => {
       toast({ title: "Profile updated successfully" });
+      // Update the form with the new data
+      if (response.user) {
+        profileForm.reset({
+          name: response.user.name || "",
+          email: response.user.email || "",
+          phone: profileForm.getValues("phone"),
+          timezone: profileForm.getValues("timezone"),
+          language: profileForm.getValues("language"),
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     },
     onError: (error) => {
@@ -173,11 +196,18 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       toast({ title: "Password updated successfully" });
-      passwordForm.reset();
+      passwordForm.reset({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
     },
-    onError: () => {
+    onError: (error: any) => {
+      const errorMessage = error.message.includes("Current password is incorrect") 
+        ? "Current password is incorrect" 
+        : "Failed to update password";
       toast({
-        title: "Failed to update password",
+        title: errorMessage,
         variant: "destructive",
       });
     },
