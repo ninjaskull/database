@@ -15,6 +15,7 @@ This is a modern full-stack CRM application for managing contact databases. Buil
 - **Smart Company Details Management**: Implemented intelligent auto-fill system that automatically populates company information for new contacts based on existing data from the same organization
 - **Company Template API**: Added endpoint to fetch company templates and preview auto-fillable fields before contact creation
 - **Enhanced Contact Forms**: Integrated real-time company auto-fill suggestions with visual indicators and one-click application in contact dialog
+- **Auto-fill for Existing Contacts**: Extended smart company auto-fill to work when editing existing contacts - system detects company changes and automatically fills missing company details
 
 # User Preferences
 

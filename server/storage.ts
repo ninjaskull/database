@@ -73,6 +73,7 @@ export interface IStorage {
   // Company details auto-fill operations
   getCompanyTemplate(companyName: string): Promise<Partial<Contact> | null>;
   createContactWithAutoFill(contact: InsertContact): Promise<Contact>;
+  updateContactWithAutoFill(id: string, updates: Partial<InsertContact>): Promise<Contact | undefined>;
 }
 
 // Utility function to generate full name from first and last name
@@ -626,6 +627,77 @@ export class DatabaseStorage implements IStorage {
     });
     
     return contact;
+  }
+
+  async updateContactWithAutoFill(id: string, updates: Partial<InsertContact>): Promise<Contact | undefined> {
+    // Get existing contact to check current company
+    const existingContact = await this.getContact(id);
+    if (!existingContact) return undefined;
+
+    let contactData = { ...updates };
+    let autoFilledFields: string[] = [];
+    let activityDescription = 'Contact information updated';
+
+    // Check if company name is being changed or added
+    const newCompany = contactData.company;
+    const oldCompany = existingContact.company;
+    
+    if (newCompany && newCompany.trim() && newCompany !== oldCompany) {
+      // Company changed or added - try to auto-fill company details
+      const companyTemplate = await this.getCompanyTemplate(newCompany);
+      
+      if (companyTemplate) {
+        // Merge current contact data with updates to see what fields are empty
+        const mergedData = { ...existingContact, ...contactData };
+        
+        // Only auto-fill fields that are empty/null in the merged contact
+        const fieldsToFill = Object.keys(companyTemplate) as Array<keyof Partial<Contact>>;
+        
+        fieldsToFill.forEach(field => {
+          const currentValue = (mergedData as any)[field];
+          const templateValue = companyTemplate[field];
+          
+          // Only fill if the field is empty and we have template data
+          if ((!currentValue || currentValue === '') && templateValue !== null && templateValue !== undefined) {
+            (contactData as any)[field] = templateValue;
+            autoFilledFields.push(field as string);
+          }
+        });
+
+        if (autoFilledFields.length > 0) {
+          activityDescription += ` with auto-filled company details: ${autoFilledFields.join(', ')}`;
+        }
+      }
+    }
+
+    // Auto-generate fullName if firstName or lastName is being updated
+    if ('firstName' in updates || 'lastName' in updates || ('fullName' in updates && !updates.fullName)) {
+      contactData.fullName = generateFullName(
+        updates.firstName ?? existingContact.firstName,
+        updates.lastName ?? existingContact.lastName,
+        updates.fullName ?? existingContact.fullName
+      );
+    }
+    
+    const [contact] = await db
+      .update(contacts)
+      .set({
+        ...contactData,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(contacts.id, id), eq(contacts.isDeleted, false)))
+      .returning();
+    
+    if (contact) {
+      await this.createContactActivity({
+        contactId: contact.id,
+        activityType: 'updated',
+        description: activityDescription,
+        changes: { ...updates, autoFilledFields: autoFilledFields.length > 0 ? autoFilledFields : undefined },
+      });
+    }
+    
+    return contact || undefined;
   }
 }
 

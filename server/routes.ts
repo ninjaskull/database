@@ -426,19 +426,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ])
       );
       
-      // Skip enrichment for simple inline edits to avoid issues
-      const contact = await storage.updateContact(req.params.id!, cleanedUpdates);
+      // Skip enrichment for simple inline edits to avoid issues, but use auto-fill for company updates
+      const contact = await storage.updateContactWithAutoFill(req.params.id!, cleanedUpdates);
       if (!contact) {
         return res.status(404).json({ message: "Contact not found" });
       }
       
-      // Log update activity
-      await storage.createContactActivity({
-        contactId: contact.id,
-        activityType: 'updated',
-        description: 'Contact updated via inline edit',
-        changes: cleanedUpdates,
-      });
+      // Activity logging is handled by updateContactWithAutoFill
       
       res.json(contact);
     } catch (error) {

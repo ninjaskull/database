@@ -152,34 +152,40 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
   // Watch for company changes and fetch auto-fill suggestions
   useEffect(() => {
     const fetchCompanyTemplate = async () => {
-      if (mode === 'edit' && watchedCompany && watchedCompany.trim() && !contact?.id) {
-        try {
-          const response = await fetch(`/api/companies/${encodeURIComponent(watchedCompany.trim())}/template`);
-          if (response.ok) {
-            const result = await response.json();
-            if (result.success && result.template) {
-              setCompanyTemplate(result.template);
-              setAutoFillSuggestions(result.autoFillableFields || []);
-              
-              // Show notification about available auto-fill
-              toast({
-                title: "Company auto-fill available",
-                description: `Found ${result.autoFillableFields?.length || 0} fields that can be auto-filled from existing company data.`,
-              });
-            } else {
-              setCompanyTemplate(null);
-              setAutoFillSuggestions([]);
+      if (mode === 'edit' && watchedCompany && watchedCompany.trim()) {
+        // Check if company has changed from original or if it's a new contact
+        const isCompanyChanged = !contact?.id || (contact?.company !== watchedCompany.trim());
+        
+        if (isCompanyChanged) {
+          try {
+            const response = await fetch(`/api/companies/${encodeURIComponent(watchedCompany.trim())}/template`);
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success && result.template) {
+                setCompanyTemplate(result.template);
+                setAutoFillSuggestions(result.autoFillableFields || []);
+                
+                // Show notification about available auto-fill
+                const contactType = contact?.id ? 'existing contact' : 'new contact';
+                toast({
+                  title: "Company auto-fill available",
+                  description: `Found ${result.autoFillableFields?.length || 0} fields that can be auto-filled from existing company data for this ${contactType}.`,
+                });
+              } else {
+                setCompanyTemplate(null);
+                setAutoFillSuggestions([]);
+              }
             }
+          } catch (error) {
+            console.error('Failed to fetch company template:', error);
           }
-        } catch (error) {
-          console.error('Failed to fetch company template:', error);
         }
       }
     };
 
     const timeoutId = setTimeout(fetchCompanyTemplate, 500); // Debounce API calls
     return () => clearTimeout(timeoutId);
-  }, [watchedCompany, mode, contact?.id, toast]);
+  }, [watchedCompany, mode, contact?.company, contact?.id, toast]);
 
   // Auto-fill company data
   const applyCompanyAutoFill = () => {
@@ -535,9 +541,10 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                                   <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
                                     Company data found: {autoFillSuggestions.length} fields available
+                                    {contact?.id ? ' (updating existing contact)' : ' (new contact)'}
                                   </span>
                                 </div>
                                 <Button 
@@ -551,7 +558,7 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                                 </Button>
                               </div>
                               <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                                Fields: {autoFillSuggestions.filter(f => f !== 'company').join(', ')}
+                                Will fill empty fields: {autoFillSuggestions.filter(f => f !== 'company').join(', ')}
                               </p>
                             </div>
                           </div>
