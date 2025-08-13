@@ -13,9 +13,7 @@ const databaseFields = [
   { value: 'firstName', label: 'First Name', category: 'Personal' },
   { value: 'lastName', label: 'Last Name', category: 'Personal' },
   { value: 'title', label: 'Job Title', category: 'Personal' },
-  
-  // Contact Information
-  { value: 'email', label: 'Email', category: 'Contact' },
+  { value: 'email', label: 'Email', category: 'Personal' },
   
   // Phone Numbers
   { value: 'mobilePhone', label: 'Mobile Phone', category: 'Phone' },
@@ -25,16 +23,16 @@ const databaseFields = [
   
   // Company Information
   { value: 'company', label: 'Company', category: 'Company' },
-  { value: 'employees', label: 'Employees (Exact number)', category: 'Company' },
-  { value: 'employeeSizeBracket', label: 'Employee Size Bracket (e.g., 1-10, 11-50, etc.)', category: 'Company' },
+  { value: 'employees', label: 'Number of Employees', category: 'Company' },
+  { value: 'employeeSizeBracket', label: 'Employee Size Bracket', category: 'Company' },
   { value: 'industry', label: 'Industry', category: 'Company' },
-  { value: 'website', label: 'Website (Company website)', category: 'Company' },
+  { value: 'website', label: 'Company Website', category: 'Company' },
+  { value: 'companyLinkedIn', label: 'Company LinkedIn', category: 'Company' },
   { value: 'technologies', label: 'Technologies', category: 'Company' },
   { value: 'annualRevenue', label: 'Annual Revenue', category: 'Company' },
   
   // Social Media & URLs
-  { value: 'personLinkedIn', label: 'Person LinkedIn URL', category: 'Social' },
-  { value: 'companyLinkedIn', label: 'Company LinkedIn URL', category: 'Social' },
+  { value: 'personLinkedIn', label: 'Person LinkedIn', category: 'Social' },
   
   // Location Information
   { value: 'city', label: 'City', category: 'Location' },
@@ -48,14 +46,14 @@ const databaseFields = [
   { value: 'companyCountry', label: 'Company Country', category: 'Company Location' },
   
   // Auto-enriched Fields (optional mapping)
-  { value: 'emailDomain', label: 'Email Domain', category: 'Enriched' },
-  { value: 'countryCode', label: 'Country Code', category: 'Enriched' },
-  { value: 'timezone', label: 'Timezone', category: 'Enriched' },
-  { value: 'leadScore', label: 'Lead Score', category: 'Enriched' },
-  { value: 'companyAge', label: 'Company Age', category: 'Enriched' },
-  { value: 'technologyCategory', label: 'Technology Category', category: 'Enriched' },
-  { value: 'region', label: 'Region', category: 'Enriched' },
-  { value: 'businessType', label: 'Business Type', category: 'Enriched' },
+  { value: 'emailDomain', label: 'Email Domain', category: 'Auto-Enriched' },
+  { value: 'countryCode', label: 'Country Code', category: 'Auto-Enriched' },
+  { value: 'timezone', label: 'Timezone', category: 'Auto-Enriched' },
+  { value: 'leadScore', label: 'Lead Score', category: 'Auto-Enriched' },
+  { value: 'companyAge', label: 'Company Age', category: 'Auto-Enriched' },
+  { value: 'technologyCategory', label: 'Technology Category', category: 'Auto-Enriched' },
+  { value: 'region', label: 'Region', category: 'Auto-Enriched' },
+  { value: 'businessType', label: 'Business Type', category: 'Auto-Enriched' },
 ];
 
 export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingProps) {
@@ -96,15 +94,6 @@ export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingP
                 {/* Personal Information */}
                 <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Personal</div>
                 {databaseFields.filter(f => f.category === 'Personal').map((field) => (
-                  <SelectItem key={field.value} value={field.value}>
-                    {field.label}
-                    {mapping[header] === field.value && ' ✅'}
-                  </SelectItem>
-                ))}
-                
-                {/* Contact Information */}
-                <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</div>
-                {databaseFields.filter(f => f.category === 'Contact').map((field) => (
                   <SelectItem key={field.value} value={field.value}>
                     {field.label}
                     {mapping[header] === field.value && ' ✅'}
@@ -158,7 +147,7 @@ export function FieldMapping({ headers, data, mapping, onChange }: FieldMappingP
                 
                 {/* Auto-Enriched (Optional) */}
                 <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Auto-Enriched</div>
-                {databaseFields.filter(f => f.category === 'Enriched').map((field) => (
+                {databaseFields.filter(f => f.category === 'Auto-Enriched').map((field) => (
                   <SelectItem key={field.value} value={field.value}>
                     {field.label}
                     {mapping[header] === field.value && ' ✅'}
