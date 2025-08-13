@@ -38,6 +38,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       });
 
       if (response.success) {
+        // Store token in localStorage for API requests
+        if (response.token) {
+          localStorage.setItem('authToken', response.token);
+        }
         onLoginSuccess(response.user, response.token);
       } else {
         setError(response.message || "Login failed");

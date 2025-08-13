@@ -62,8 +62,14 @@ export async function validateSession(token: string): Promise<{ valid: boolean; 
       return { valid: false };
     }
 
-    const user = await storage.getUserByEmail(session.userId);
+    const user = await storage.getUserById(session.userId);
     if (!user) {
+      return { valid: false };
+    }
+
+    // Check if session is expired
+    if (session.expiresAt && session.expiresAt < new Date()) {
+      await storage.deleteSession(token);
       return { valid: false };
     }
 

@@ -50,6 +50,8 @@ export const getQueryFn: <T>(options: {
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+      // Clear invalid token
+      localStorage.removeItem('authToken');
       return null;
     }
 
