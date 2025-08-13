@@ -1,20 +1,85 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import session from "express-session";
 import { storage } from "./storage";
-import { insertContactSchema, insertImportJobSchema } from "@shared/schema";
+import { insertContactSchema, insertImportJobSchema, loginSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import { enrichContactData } from "../client/src/lib/data-enrichment";
 import { csvFieldMapper } from "./nlp-mapper";
 import { StreamingCSVParser } from "./streaming-csv-parser";
 import { advancedCSVProcessor } from "./csv-processor";
+import { authenticateUser, requireAuth, initializeDefaultUser } from "./auth";
 
 const upload = multer({ dest: 'uploads/' });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup session middleware
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-for-development',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false, // Set to true in production with HTTPS
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    },
+  }));
+
+  // Initialize default user
+  await initializeDefaultUser();
+
+  // Authentication routes
+  app.post("/api/login", async (req, res) => {
+    try {
+      const { email, password } = loginSchema.parse(req.body);
+      const result = await authenticateUser(email, password);
+      
+      if (result.success && result.token) {
+        // Store token in session
+        (req.session as any).token = result.token;
+        res.json({ 
+          success: true, 
+          user: result.user,
+          token: result.token 
+        });
+      } else {
+        res.status(401).json({ 
+          success: false, 
+          message: "Invalid email or password" 
+        });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(400).json({ 
+        success: false, 
+        message: "Invalid request" 
+      });
+    }
+  });
+
+  app.post("/api/logout", requireAuth, async (req, res) => {
+    try {
+      const token = (req.session as any)?.token;
+      if (token) {
+        await storage.deleteSession(token);
+        (req.session as any).token = null;
+      }
+      req.session?.destroy(() => {
+        res.json({ success: true });
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      res.status(500).json({ success: false, message: "Logout failed" });
+    }
+  });
+
+  app.get("/api/auth/user", requireAuth, async (req, res) => {
+    res.json((req as any).user);
+  });
   
-  // Get contacts with pagination and filtering
-  app.get("/api/contacts", async (req, res) => {
+  // Get contacts with pagination and filtering (protected route)
+  app.get("/api/contacts", requireAuth, async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -42,8 +107,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get single contact
-  app.get("/api/contacts/:id", async (req, res) => {
+  // Get single contact (protected route)
+  app.get("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       const contact = await storage.getContact(req.params.id!);
       if (!contact) {
@@ -55,8 +120,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create contact
-  app.post("/api/contacts", async (req, res) => {
+  // Create contact (protected route)
+  app.post("/api/contacts", requireAuth, async (req, res) => {
     try {
       const validatedData = insertContactSchema.parse(req.body);
       
@@ -256,7 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get contact stats  
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", requireAuth, async (req, res) => {
     try {
       const stats = await storage.getContactStats();
       res.json(stats);

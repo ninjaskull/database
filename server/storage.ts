@@ -2,12 +2,18 @@ import {
   contacts, 
   contactActivities, 
   importJobs,
+  users,
+  sessions,
   type Contact, 
   type InsertContact,
   type ContactActivity,
   type InsertContactActivity,
   type ImportJob,
-  type InsertImportJob
+  type InsertImportJob,
+  type User,
+  type InsertUser,
+  type Session,
+  type InsertSession
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql } from "drizzle-orm";
@@ -50,6 +56,16 @@ export interface IStorage {
   createImportJob(job: InsertImportJob): Promise<ImportJob>;
   updateImportJob(id: string, updates: Partial<ImportJob>): Promise<ImportJob | undefined>;
   getImportJob(id: string): Promise<ImportJob | undefined>;
+  
+  // User authentication
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  
+  // Session management
+  createSession(session: InsertSession): Promise<Session>;
+  getSessionByToken(token: string): Promise<Session | undefined>;
+  deleteSession(token: string): Promise<boolean>;
+  deleteExpiredSessions(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -324,6 +340,39 @@ export class DatabaseStorage implements IStorage {
       .from(importJobs)
       .where(eq(importJobs.id, id));
     return job || undefined;
+  }
+
+  // User authentication methods
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const [newUser] = await db.insert(users).values(user).returning();
+    return newUser;
+  }
+
+  // Session management methods
+  async createSession(session: InsertSession): Promise<Session> {
+    const [newSession] = await db.insert(sessions).values(session).returning();
+    return newSession;
+  }
+
+  async getSessionByToken(token: string): Promise<Session | undefined> {
+    const [session] = await db.select().from(sessions)
+      .where(and(eq(sessions.token, token), sql`${sessions.expiresAt} > NOW()`));
+    return session;
+  }
+
+  async deleteSession(token: string): Promise<boolean> {
+    const result = await db.delete(sessions).where(eq(sessions.token, token));
+    return (result.rowCount || 0) > 0;
+  }
+
+  async deleteExpiredSessions(): Promise<number> {
+    const result = await db.delete(sessions).where(sql`${sessions.expiresAt} <= NOW()`);
+    return result.rowCount || 0;
   }
 }
 
