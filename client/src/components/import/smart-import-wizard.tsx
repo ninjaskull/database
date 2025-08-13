@@ -123,6 +123,7 @@ export function SmartImportWizard() {
     },
     onSuccess: (data) => {
       console.log('Auto-mapping response:', data);
+      console.log('Current step before processing:', step);
       
       if (!data.headers || !Array.isArray(data.headers)) {
         console.error('Invalid response structure:', data);
@@ -149,9 +150,17 @@ export function SmartImportWizard() {
         };
       });
       
+      console.log('Generated mappings:', mappings);
+      console.log('Final mapping object:', data.autoMapping || data.mapping || {});
+      
       setFieldMappings(mappings);
       setFinalMapping(data.autoMapping || data.mapping || {});
+      
+      // Force step change
+      console.log('Setting step to mapping...');
       setStep('mapping');
+      
+      console.log('Step after setting:', step);
       
       toast({
         title: "Smart mapping complete",
@@ -323,6 +332,11 @@ export function SmartImportWizard() {
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
+      {/* Debug Info */}
+      <div className="text-xs text-gray-500 text-center">
+        Current Step: {step} | Field Mappings: {fieldMappings.length} | Final Mapping Keys: {Object.keys(finalMapping).length}
+      </div>
+      
       {/* Progress Steps */}
       <div className="flex items-center justify-center space-x-8 mb-8">
         {[
@@ -416,9 +430,12 @@ export function SmartImportWizard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Zap className="w-5 h-5" />
-                  Smart Field Mapping
+                  Smart Field Mapping - Adjust Auto-Mapped Fields
                   <Badge variant="secondary">{Object.keys(finalMapping).length} mapped</Badge>
                 </CardTitle>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                  Review and correct the automatically mapped fields below. High confidence mappings are shown in green.
+                </p>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-96">
