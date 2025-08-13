@@ -74,6 +74,7 @@ export interface IStorage {
   getCompanyTemplate(companyName: string): Promise<Partial<Contact> | null>;
   createContactWithAutoFill(contact: InsertContact): Promise<Contact>;
   updateContactWithAutoFill(id: string, updates: Partial<InsertContact>): Promise<Contact | undefined>;
+  bulkAutoFillCompanyDetails(): Promise<{ processed: number; updated: number; companiesProcessed: string[] }>;
 }
 
 // Utility function to generate full name from first and last name
@@ -643,12 +644,9 @@ export class DatabaseStorage implements IStorage {
     const oldCompany = existingContact.company;
     const companyToCheck = newCompany || oldCompany;
     
-    console.log(`Auto-fill check: newCompany="${newCompany}", oldCompany="${oldCompany}", companyToCheck="${companyToCheck}"`);
-    
     if (companyToCheck && companyToCheck.trim()) {
       // Company exists - try to auto-fill missing company details
       const companyTemplate = await this.getCompanyTemplate(companyToCheck);
-      console.log(`Company template found:`, companyTemplate ? 'Yes' : 'No', companyTemplate ? Object.keys(companyTemplate) : []);
       
       if (companyTemplate) {
         // Merge current contact data with updates to see what fields are empty
@@ -661,17 +659,14 @@ export class DatabaseStorage implements IStorage {
           const currentValue = (mergedData as any)[field];
           const templateValue = companyTemplate[field];
           
-          console.log(`Field "${field}": current="${currentValue}", template="${templateValue}", isEmpty="${!currentValue || currentValue === ''}"`);
-          
           // Only fill if the field is empty and we have template data
           if ((!currentValue || currentValue === '') && templateValue !== null && templateValue !== undefined) {
             (contactData as any)[field] = templateValue;
             autoFilledFields.push(field as string);
-            console.log(`Auto-filled field "${field}" with value:`, templateValue);
           }
         });
 
-        console.log(`Auto-fill completed. Fields filled: ${autoFilledFields.length}`, autoFilledFields);
+        // Log completion for debugging if needed
         
         if (autoFilledFields.length > 0) {
           activityDescription += ` with auto-filled company details: ${autoFilledFields.join(', ')}`;
@@ -707,6 +702,93 @@ export class DatabaseStorage implements IStorage {
     }
     
     return contact || undefined;
+  }
+
+  async bulkAutoFillCompanyDetails(): Promise<{ processed: number; updated: number; companiesProcessed: string[] }> {
+    console.log('🔧 Starting bulk company auto-fill process...');
+    
+    // Get all contacts that have a company name but might be missing company details
+    const contactsToProcess = await db
+      .select()
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        isNotNull(contacts.company),
+        ne(contacts.company, '')
+      ));
+
+    console.log(`📊 Found ${contactsToProcess.length} contacts with company names`);
+
+    let processed = 0;
+    let updated = 0;
+    const companiesProcessed: string[] = [];
+    const companyTemplateCache = new Map<string, Partial<Contact> | null>();
+
+    for (const contact of contactsToProcess) {
+      if (!contact.company) continue;
+      
+      processed++;
+      
+      // Get or cache company template
+      let companyTemplate = companyTemplateCache.get(contact.company);
+      if (companyTemplate === undefined) {
+        companyTemplate = await this.getCompanyTemplate(contact.company);
+        companyTemplateCache.set(contact.company, companyTemplate);
+      }
+
+      if (!companyTemplate) continue;
+
+      // Check which fields can be auto-filled
+      const fieldsToFill = Object.keys(companyTemplate) as Array<keyof Partial<Contact>>;
+      const autoFilledFields: string[] = [];
+      const updateData: any = {};
+
+      fieldsToFill.forEach(field => {
+        const currentValue = (contact as any)[field];
+        const templateValue = companyTemplate![field];
+        
+        // Only fill if the field is empty and we have template data
+        if ((!currentValue || currentValue === '') && templateValue !== null && templateValue !== undefined) {
+          updateData[field] = templateValue;
+          autoFilledFields.push(field as string);
+        }
+      });
+
+      // Update contact if there are fields to fill
+      if (autoFilledFields.length > 0) {
+        await db
+          .update(contacts)
+          .set({
+            ...updateData,
+            updatedAt: new Date(),
+          })
+          .where(eq(contacts.id, contact.id));
+
+        // Log activity
+        await this.createContactActivity({
+          contactId: contact.id,
+          activityType: 'updated',
+          description: `Bulk auto-fill applied company details: ${autoFilledFields.join(', ')}`,
+          changes: { autoFilledFields },
+        });
+
+        updated++;
+        
+        if (!companiesProcessed.includes(contact.company)) {
+          companiesProcessed.push(contact.company);
+        }
+
+        console.log(`✅ Auto-filled ${autoFilledFields.length} fields for ${contact.fullName} at ${contact.company}`);
+      }
+    }
+
+    console.log(`🎉 Bulk auto-fill completed: ${updated}/${processed} contacts updated across ${companiesProcessed.length} companies`);
+    
+    return {
+      processed,
+      updated,
+      companiesProcessed
+    };
   }
 }
 

@@ -1,6 +1,9 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { Building2 } from "lucide-react";
 
 interface FilterBarProps {
   filters: {
@@ -16,9 +19,37 @@ interface FilterBarProps {
 }
 
 export function FilterBar({ filters, onFiltersChange, selectedCount, onBulkEdit, onBulkDelete }: FilterBarProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
   const updateFilter = (key: string, value: string) => {
     onFiltersChange({ ...filters, [key]: value });
   };
+
+  const bulkAutoFillMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/contacts/bulk-autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error('Failed to perform bulk auto-fill');
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+      toast({
+        title: "Bulk auto-fill completed!",
+        description: `Updated ${result.updated} contacts across ${result.companiesProcessed.length} companies: ${result.companiesProcessed.join(', ')}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Auto-fill failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
+      });
+    }
+  });
 
   return (
     <Card className="bg-white dark:bg-gray-800 shadow rounded-lg mb-6">
@@ -83,20 +114,36 @@ export function FilterBar({ filters, onFiltersChange, selectedCount, onBulkEdit,
             </Select>
           </div>
 
-          {/* Bulk Actions */}
-          {selectedCount > 0 && (
-            <div className="flex items-center space-x-3">
-              <span className="text-sm text-gray-600 dark:text-gray-400">{selectedCount} selected</span>
-              <Button variant="outline" size="sm" onClick={onBulkEdit}>
-                <i className="fas fa-edit mr-1"></i>
-                Edit
-              </Button>
-              <Button variant="outline" size="sm" onClick={onBulkDelete} className="text-red-600 border-red-600 hover:bg-red-50 dark:text-red-400 dark:border-red-400 dark:hover:bg-red-900/20">
-                <i className="fas fa-trash mr-1"></i>
-                Delete
-              </Button>
-            </div>
-          )}
+          {/* Actions */}
+          <div className="flex items-center space-x-3">
+            {/* Bulk Auto-fill Button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => bulkAutoFillMutation.mutate()}
+              disabled={bulkAutoFillMutation.isPending}
+              className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+              data-testid="button-bulk-autofill"
+            >
+              <Building2 className="w-4 h-4 mr-1" />
+              {bulkAutoFillMutation.isPending ? 'Auto-filling...' : 'Auto-fill Companies'}
+            </Button>
+            
+            {/* Bulk Actions for selected contacts */}
+            {selectedCount > 0 && (
+              <>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{selectedCount} selected</span>
+                <Button variant="outline" size="sm" onClick={onBulkEdit}>
+                  <i className="fas fa-edit mr-1"></i>
+                  Edit
+                </Button>
+                <Button variant="outline" size="sm" onClick={onBulkDelete} className="text-red-600 border-red-600 hover:bg-red-50 dark:text-red-400 dark:border-red-400 dark:hover:bg-red-900/20">
+                  <i className="fas fa-trash mr-1"></i>
+                  Delete
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

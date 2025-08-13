@@ -569,6 +569,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk auto-fill company details for all contacts
+  app.post("/api/contacts/bulk-autofill", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.bulkAutoFillCompanyDetails();
+      res.json({ 
+        success: true, 
+        message: `Auto-filled ${result.updated} contacts across ${result.companiesProcessed.length} companies`,
+        ...result 
+      });
+    } catch (error) {
+      console.error('Bulk auto-fill error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to perform bulk auto-fill", 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
   // Ultra-fast auto-map CSV headers using advanced streaming parser and NLP
   app.post("/api/import/auto-map", upload.single('csv'), async (req, res) => {
     try {
