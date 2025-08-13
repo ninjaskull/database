@@ -32,8 +32,26 @@ export default function Contacts() {
                 filters={filters}
                 onFiltersChange={setFilters}
                 selectedCount={selectedContactIds.length}
-                onBulkEdit={() => {}}
-                onBulkDelete={() => {}}
+                onBulkEdit={() => {
+                  console.log('Bulk edit clicked for:', selectedContactIds);
+                }}
+                onBulkDelete={async () => {
+                  if (selectedContactIds.length > 0 && confirm(`Delete ${selectedContactIds.length} contacts?`)) {
+                    try {
+                      const response = await fetch('/api/contacts', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: selectedContactIds })
+                      });
+                      if (response.ok) {
+                        setSelectedContactIds([]);
+                        window.location.reload();
+                      }
+                    } catch (error) {
+                      console.error('Bulk delete failed:', error);
+                    }
+                  }
+                }}
               />
               
               <ContactsTable 

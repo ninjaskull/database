@@ -37,7 +37,7 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/contacts', page, limit, cleanFilters, sortBy, sortOrder],
-  });
+  }) as { data?: { contacts: Contact[], total: number }, isLoading: boolean, error: any };
 
   const handleSort = (column: string) => {
     if (sortBy === column) {

@@ -25,6 +25,18 @@ export function FilterBar({ filters, onFiltersChange, selectedCount, onBulkEdit,
       <CardContent className="px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
           <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+            {/* Search Input */}
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                placeholder="Search contacts..."
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                value={filters.search}
+                onChange={(e) => updateFilter('search', e.target.value)}
+                data-testid="input-search"
+              />
+            </div>
+            
             {/* Industry Filter */}
             <Select value={filters.industry} onValueChange={(value) => updateFilter('industry', value)}>
               <SelectTrigger className="w-full sm:w-40">
