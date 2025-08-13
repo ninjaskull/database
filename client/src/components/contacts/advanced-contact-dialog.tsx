@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { CalendarDays, Building, Globe, Phone, Mail, MapPin, Star, Users, DollarSign, Activity } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getEmployeeSizeBracket, EMPLOYEE_SIZE_BRACKETS } from "@/lib/employee-size-utils";
 
 // Advanced contact schema for editing all fields
 const contactEditSchema = z.object({
@@ -131,6 +132,19 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
       businessType: contact?.businessType || "",
     },
   });
+
+  // Watch for employee count changes and auto-update size bracket
+  const watchedEmployees = form.watch('employees');
+  const currentBracket = form.watch('employeeSizeBracket');
+
+  useEffect(() => {
+    if (mode === 'edit' && watchedEmployees) {
+      const suggestedBracket = getEmployeeSizeBracket(watchedEmployees);
+      if (suggestedBracket && suggestedBracket !== currentBracket) {
+        form.setValue('employeeSizeBracket', suggestedBracket);
+      }
+    }
+  }, [watchedEmployees, mode, form, currentBracket]);
 
   const updateContactMutation = useMutation({
     mutationFn: async (data: ContactEditForm) => {
@@ -489,9 +503,26 @@ export function AdvancedContactDialog({ contact, isOpen, onClose, mode: initialM
                             <FormItem>
                               <FormLabel>Employee Size Bracket</FormLabel>
                               <FormControl>
-                                <Input {...field} placeholder="e.g., 50-100" disabled={mode === 'view'} data-testid="input-employeeSizeBracket" />
+                                <Select value={field.value || ""} onValueChange={field.onChange} disabled={mode === 'view'}>
+                                  <SelectTrigger data-testid="select-employeeSizeBracket">
+                                    <SelectValue placeholder="Select or auto-filled from employee count" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="">Select bracket...</SelectItem>
+                                    {EMPLOYEE_SIZE_BRACKETS.map((bracket) => (
+                                      <SelectItem key={bracket} value={bracket}>
+                                        {bracket} employees
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </FormControl>
                               <FormMessage />
+                              {mode === 'edit' && form.watch('employees') && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  Auto-filled based on employee count
+                                </p>
+                              )}
                             </FormItem>
                           )}
                         />

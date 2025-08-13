@@ -1,4 +1,5 @@
 import type { InsertContact } from "@shared/schema";
+import { getEmployeeSizeBracket } from "./employee-size-utils";
 
 export async function enrichContactData(contact: Partial<InsertContact>): Promise<Partial<InsertContact>> {
   const enriched = { ...contact };
@@ -34,6 +35,11 @@ export async function enrichContactData(contact: Partial<InsertContact>): Promis
   // Determine business type from industry
   if (contact.industry && !contact.businessType) {
     enriched.businessType = getBusinessTypeFromIndustry(contact.industry);
+  }
+  
+  // Auto-fill employee size bracket based on employee count
+  if (contact.employees && !contact.employeeSizeBracket) {
+    enriched.employeeSizeBracket = getEmployeeSizeBracket(contact.employees);
   }
   
   // Categorize technologies
@@ -176,6 +182,8 @@ function categorizeTechnologies(technologies: string[]): string {
   
   return 'Other';
 }
+
+// Employee size bracket function moved to employee-size-utils.ts
 
 function calculateLeadScore(contact: Partial<InsertContact>): number {
   let score = 5.0; // Base score
