@@ -516,17 +516,35 @@ export class DatabaseStorage implements IStorage {
     return fixedCount;
   }
 
-  // Company details auto-fill functionality
-  async getCompanyTemplate(companyName: string): Promise<Partial<Contact> | null> {
-    if (!companyName || !companyName.trim()) return null;
+  // Enhanced company auto-fill functionality - searches by company name, website, or LinkedIn
+  async getCompanyTemplate(companyName?: string, website?: string, companyLinkedIn?: string): Promise<Partial<Contact> | null> {
+    // Build search conditions for any of the three key identifiers
+    const searchConditions = [];
+    
+    if (companyName?.trim()) {
+      searchConditions.push(ilike(contacts.company, `%${companyName.trim()}%`));
+    }
+    
+    if (website?.trim()) {
+      // Clean URL for better matching
+      const cleanWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+      searchConditions.push(ilike(contacts.website, `%${cleanWebsite}%`));
+    }
+    
+    if (companyLinkedIn?.trim()) {
+      const cleanLinkedIn = companyLinkedIn.replace(/^https?:\/\//, '').replace(/^www\./, '');
+      searchConditions.push(ilike(contacts.companyLinkedIn, `%${cleanLinkedIn}%`));
+    }
 
-    // Find the most complete company record (one with the most filled fields)
+    if (searchConditions.length === 0) return null;
+
+    // Find contacts matching any of the identifiers
     const companyContacts = await db
       .select()
       .from(contacts)
       .where(and(
         eq(contacts.isDeleted, false),
-        eq(contacts.company, companyName.trim())
+        or(...searchConditions)
       ))
       .orderBy(desc(contacts.createdAt));
 
@@ -581,9 +599,13 @@ export class DatabaseStorage implements IStorage {
     let contactData = { ...insertContact };
     let autoFilledFields: string[] = [];
 
-    // If company name is provided, try to auto-fill company details
-    if (contactData.company && contactData.company.trim()) {
-      const companyTemplate = await this.getCompanyTemplate(contactData.company);
+    // If any company identifier is provided, try to auto-fill company details
+    if (contactData.company?.trim() || contactData.website?.trim() || contactData.companyLinkedIn?.trim()) {
+      const companyTemplate = await this.getCompanyTemplate(
+        contactData.company || undefined, 
+        contactData.website || undefined, 
+        contactData.companyLinkedIn || undefined
+      );
       
       if (companyTemplate) {
         // Only auto-fill fields that are empty/null in the new contact
@@ -644,9 +666,13 @@ export class DatabaseStorage implements IStorage {
     const oldCompany = existingContact.company;
     const companyToCheck = newCompany || oldCompany;
     
-    if (companyToCheck && companyToCheck.trim()) {
-      // Company exists - try to auto-fill missing company details
-      const companyTemplate = await this.getCompanyTemplate(companyToCheck);
+    if (companyToCheck?.trim() || existingContact.website?.trim() || existingContact.companyLinkedIn?.trim()) {
+      // Company identifiers exist - try to auto-fill missing company details
+      const companyTemplate = await this.getCompanyTemplate(
+        companyToCheck || undefined, 
+        (contactData.website || existingContact.website) || undefined, 
+        (contactData.companyLinkedIn || existingContact.companyLinkedIn) || undefined
+      );
       
       if (companyTemplate) {
         // Merge current contact data with updates to see what fields are empty
@@ -707,14 +733,17 @@ export class DatabaseStorage implements IStorage {
   async bulkAutoFillCompanyDetails(): Promise<{ processed: number; updated: number; companiesProcessed: string[] }> {
     console.log('🔧 Starting bulk company auto-fill process...');
     
-    // Get all contacts that have a company name but might be missing company details
+    // Get all contacts that have any company identifier (name, website, or LinkedIn)
     const contactsToProcess = await db
       .select()
       .from(contacts)
       .where(and(
         eq(contacts.isDeleted, false),
-        isNotNull(contacts.company),
-        ne(contacts.company, '')
+        or(
+          and(isNotNull(contacts.company), ne(contacts.company, '')),
+          and(isNotNull(contacts.website), ne(contacts.website, '')),
+          and(isNotNull(contacts.companyLinkedIn), ne(contacts.companyLinkedIn, ''))
+        )
       ));
 
     console.log(`📊 Found ${contactsToProcess.length} contacts with company names`);
@@ -725,15 +754,23 @@ export class DatabaseStorage implements IStorage {
     const companyTemplateCache = new Map<string, Partial<Contact> | null>();
 
     for (const contact of contactsToProcess) {
-      if (!contact.company) continue;
+      // Skip if no identifiers are available
+      if (!contact.company?.trim() && !contact.website?.trim() && !contact.companyLinkedIn?.trim()) continue;
       
       processed++;
       
-      // Get or cache company template
-      let companyTemplate = companyTemplateCache.get(contact.company);
+      // Create cache key from available identifiers
+      const cacheKey = `${contact.company || ''}|${contact.website || ''}|${contact.companyLinkedIn || ''}`;
+      
+      // Get or cache company template using any available identifiers
+      let companyTemplate = companyTemplateCache.get(cacheKey);
       if (companyTemplate === undefined) {
-        companyTemplate = await this.getCompanyTemplate(contact.company);
-        companyTemplateCache.set(contact.company, companyTemplate);
+        companyTemplate = await this.getCompanyTemplate(
+          contact.company || undefined, 
+          contact.website || undefined, 
+          contact.companyLinkedIn || undefined
+        );
+        companyTemplateCache.set(cacheKey, companyTemplate);
       }
 
       if (!companyTemplate) continue;
@@ -774,11 +811,12 @@ export class DatabaseStorage implements IStorage {
 
         updated++;
         
-        if (!companiesProcessed.includes(contact.company)) {
-          companiesProcessed.push(contact.company);
+        const companyIdentifier = contact.company || contact.website || contact.companyLinkedIn || 'Unknown Company';
+        if (!companiesProcessed.includes(companyIdentifier)) {
+          companiesProcessed.push(companyIdentifier);
         }
 
-        console.log(`✅ Auto-filled ${autoFilledFields.length} fields for ${contact.fullName} at ${contact.company}`);
+        console.log(`✅ Auto-filled ${autoFilledFields.length} fields for ${contact.fullName} at ${companyIdentifier}`);
       }
     }
 
