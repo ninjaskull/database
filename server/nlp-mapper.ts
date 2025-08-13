@@ -20,89 +20,193 @@ interface MappingScore {
 
 class CSVFieldMapper {
   private fieldPatterns: FieldPattern[] = [
+    // Personal Information
     {
       dbField: 'fullName',
-      patterns: ['full.*name', 'complete.*name', 'name', 'contact.*name'],
-      synonyms: ['full name', 'complete name', 'name', 'contact name', 'person name'],
-      keywords: ['full', 'complete', 'name', 'contact', 'person'],
+      patterns: ['full.*name', 'complete.*name', '^name$', 'contact.*name', 'person.*name', 'full_name', 'fullname'],
+      synonyms: ['full name', 'complete name', 'name', 'contact name', 'person name', 'full_name', 'fullname', 'display name'],
+      keywords: ['full', 'complete', 'name', 'contact', 'person', 'display'],
       weight: 1.0
     },
     {
       dbField: 'firstName',
-      patterns: ['first.*name', 'given.*name', 'fname'],
-      synonyms: ['first name', 'given name', 'fname', 'forename'],
-      keywords: ['first', 'given', 'fname', 'forename'],
+      patterns: ['first.*name', 'given.*name', 'fname', 'f_name', 'firstname'],
+      synonyms: ['first name', 'given name', 'fname', 'forename', 'f_name', 'firstname', 'christian name'],
+      keywords: ['first', 'given', 'fname', 'forename', 'christian'],
       weight: 0.9
     },
     {
       dbField: 'lastName',
-      patterns: ['last.*name', 'family.*name', 'surname', 'lname'],
-      synonyms: ['last name', 'family name', 'surname', 'lname'],
+      patterns: ['last.*name', 'family.*name', 'surname', 'lname', 'l_name', 'lastname'],
+      synonyms: ['last name', 'family name', 'surname', 'lname', 'l_name', 'lastname'],
       keywords: ['last', 'family', 'surname', 'lname'],
       weight: 0.9
     },
     {
+      dbField: 'title',
+      patterns: ['job.*title', 'job.*position', '^title$', '^position$', 'role', 'designation', 'job_title', 'jobtitle'],
+      synonyms: ['job title', 'title', 'position', 'role', 'designation', 'job_title', 'jobtitle', 'job position', 'work title'],
+      keywords: ['job', 'title', 'position', 'role', 'designation', 'work'],
+      weight: 0.95
+    },
+    
+    // Contact Information
+    {
       dbField: 'email',
-      patterns: ['email.*address', 'email', 'e.mail', 'mail'],
-      synonyms: ['email address', 'email', 'e-mail', 'mail', 'electronic mail'],
-      keywords: ['email', 'mail', 'e-mail', '@'],
+      patterns: ['email.*address', '^email$', 'e.mail', 'e_mail', 'mail', 'email_address', 'emailaddress'],
+      synonyms: ['email address', 'email', 'e-mail', 'mail', 'electronic mail', 'e_mail', 'email_address', 'emailaddress'],
+      keywords: ['email', 'mail', 'e-mail', '@', 'electronic'],
       weight: 1.0
     },
+    
+    // Phone Numbers with Enhanced Detection
     {
       dbField: 'mobilePhone',
-      patterns: ['mobile.*phone', 'mobile', 'cell.*phone', 'phone', 'tel', 'telephone'],
-      synonyms: ['mobile phone', 'mobile', 'cell phone', 'phone', 'telephone', 'tel'],
-      keywords: ['mobile', 'cell', 'phone', 'tel', 'telephone'],
-      weight: 0.8
-    },
-    {
-      dbField: 'homePhone',
-      patterns: ['home.*phone', 'home.*tel', 'landline'],
-      synonyms: ['home phone', 'home telephone', 'landline', 'home tel'],
-      keywords: ['home', 'landline', 'house'],
-      weight: 0.7
-    },
-    {
-      dbField: 'company',
-      patterns: ['company.*name', 'company', 'organization', 'org', 'employer'],
-      synonyms: ['company name', 'company', 'organization', 'org', 'employer', 'business'],
-      keywords: ['company', 'organization', 'org', 'employer', 'business'],
+      patterns: ['mobile.*phone', 'mobile.*number', 'cell.*phone', 'cell.*number', '^mobile$', '^cell$', '^phone$', 'phone.*number', 'tel', 'telephone'],
+      synonyms: ['mobile phone', 'mobile', 'cell phone', 'cell', 'phone', 'telephone', 'tel', 'mobile number', 'cell number', 'phone number'],
+      keywords: ['mobile', 'cell', 'phone', 'tel', 'telephone', 'number'],
       weight: 0.9
     },
     {
-      dbField: 'title',
-      patterns: ['job.*title', 'title', 'position', 'role'],
-      synonyms: ['job title', 'title', 'position', 'role', 'designation'],
-      keywords: ['job', 'title', 'position', 'role', 'designation'],
+      dbField: 'corporatePhone',
+      patterns: ['corporate.*phone', 'corp.*phone', 'work.*phone', 'office.*phone', 'business.*phone', 'company.*phone'],
+      synonyms: ['corporate phone', 'corp phone', 'work phone', 'office phone', 'business phone', 'company phone', 'work number', 'office number'],
+      keywords: ['corporate', 'corp', 'work', 'office', 'business', 'company'],
+      weight: 0.85
+    },
+    {
+      dbField: 'homePhone',
+      patterns: ['home.*phone', 'home.*tel', 'home.*number', 'landline', 'house.*phone'],
+      synonyms: ['home phone', 'home telephone', 'landline', 'home tel', 'house phone', 'home number'],
+      keywords: ['home', 'landline', 'house', 'personal'],
       weight: 0.8
+    },
+    {
+      dbField: 'otherPhone',
+      patterns: ['other.*phone', 'alt.*phone', 'alternate.*phone', 'additional.*phone', 'secondary.*phone'],
+      synonyms: ['other phone', 'alt phone', 'alternate phone', 'additional phone', 'secondary phone', 'backup phone'],
+      keywords: ['other', 'alt', 'alternate', 'additional', 'secondary', 'backup'],
+      weight: 0.7
+    },
+    
+    // Company Information
+    {
+      dbField: 'company',
+      patterns: ['company.*name', '^company$', 'organization', 'org', 'employer', 'business.*name', 'firm', 'corp', 'corporation'],
+      synonyms: ['company name', 'company', 'organization', 'org', 'employer', 'business', 'firm', 'corp', 'corporation', 'enterprise'],
+      keywords: ['company', 'organization', 'org', 'employer', 'business', 'firm', 'corp', 'enterprise'],
+      weight: 0.95
     },
     {
       dbField: 'industry',
-      patterns: ['industry', 'sector', 'business.*type'],
-      synonyms: ['industry', 'sector', 'business type', 'field'],
-      keywords: ['industry', 'sector', 'business', 'field'],
-      weight: 0.7
+      patterns: ['^industry$', 'sector', 'business.*type', 'vertical', 'field', 'domain'],
+      synonyms: ['industry', 'sector', 'business type', 'field', 'vertical', 'domain', 'market'],
+      keywords: ['industry', 'sector', 'business', 'field', 'vertical', 'domain', 'market'],
+      weight: 0.9
     },
     {
-      dbField: 'city',
-      patterns: ['city', 'town', 'locality'],
-      synonyms: ['city', 'town', 'locality', 'municipality'],
-      keywords: ['city', 'town', 'locality', 'place'],
-      weight: 0.6
+      dbField: 'employees',
+      patterns: ['employees', 'employee.*count', 'staff.*count', 'headcount', 'team.*size', 'workforce'],
+      synonyms: ['employees', 'employee count', 'staff count', 'headcount', 'team size', 'workforce', 'number of employees'],
+      keywords: ['employees', 'employee', 'staff', 'headcount', 'team', 'workforce', 'count'],
+      weight: 0.8
     },
     {
-      dbField: 'country',
-      patterns: ['country', 'nation'],
-      synonyms: ['country', 'nation', 'state'],
-      keywords: ['country', 'nation', 'state'],
-      weight: 0.7
+      dbField: 'employeeSizeBracket',
+      patterns: ['employee.*size', 'company.*size', 'size.*bracket', 'employee.*bracket'],
+      synonyms: ['employee size bracket', 'company size', 'size bracket', 'employee bracket', 'company size bracket'],
+      keywords: ['size', 'bracket', 'range', 'category'],
+      weight: 0.75
+    },
+    {
+      dbField: 'annualRevenue',
+      patterns: ['annual.*revenue', 'revenue', 'turnover', 'sales', 'income'],
+      synonyms: ['annual revenue', 'revenue', 'turnover', 'sales', 'income', 'yearly revenue'],
+      keywords: ['revenue', 'turnover', 'sales', 'income', 'annual', 'yearly'],
+      weight: 0.8
     },
     {
       dbField: 'website',
-      patterns: ['website', 'web.*site', 'url', 'homepage'],
-      synonyms: ['website', 'web site', 'url', 'homepage', 'web address'],
-      keywords: ['website', 'web', 'url', 'http', 'www'],
+      patterns: ['website', 'web.*site', 'url', 'homepage', 'web.*address', 'site'],
+      synonyms: ['website', 'web site', 'url', 'homepage', 'web address', 'site', 'web page'],
+      keywords: ['website', 'web', 'url', 'http', 'www', 'site', 'homepage'],
+      weight: 0.9
+    },
+    {
+      dbField: 'technologies',
+      patterns: ['technologies', 'tech.*stack', 'tools', 'software', 'platforms'],
+      synonyms: ['technologies', 'tech stack', 'tools', 'software', 'platforms', 'tech', 'technology'],
+      keywords: ['technologies', 'tech', 'tools', 'software', 'platforms', 'stack'],
       weight: 0.8
+    },
+    
+    // Social Media
+    {
+      dbField: 'personLinkedIn',
+      patterns: ['linkedin', 'linked.*in', 'personal.*linkedin', 'person.*linkedin', 'profile'],
+      synonyms: ['linkedin', 'linked in', 'personal linkedin', 'person linkedin', 'profile', 'linkedin profile'],
+      keywords: ['linkedin', 'linked', 'profile', 'personal', 'person'],
+      weight: 0.85
+    },
+    {
+      dbField: 'companyLinkedIn',
+      patterns: ['company.*linkedin', 'business.*linkedin', 'corp.*linkedin', 'organization.*linkedin'],
+      synonyms: ['company linkedin', 'business linkedin', 'corp linkedin', 'organization linkedin', 'company profile'],
+      keywords: ['company', 'business', 'corp', 'organization', 'linkedin'],
+      weight: 0.8
+    },
+    
+    // Location Information
+    {
+      dbField: 'city',
+      patterns: ['^city$', 'town', 'locality', 'municipality'],
+      synonyms: ['city', 'town', 'locality', 'municipality', 'place'],
+      keywords: ['city', 'town', 'locality', 'place', 'location'],
+      weight: 0.85
+    },
+    {
+      dbField: 'state',
+      patterns: ['^state$', 'province', 'region', 'territory'],
+      synonyms: ['state', 'province', 'region', 'territory', 'administrative region'],
+      keywords: ['state', 'province', 'region', 'territory', 'admin'],
+      weight: 0.8
+    },
+    {
+      dbField: 'country',
+      patterns: ['^country$', 'nation', 'nationality'],
+      synonyms: ['country', 'nation', 'nationality'],
+      keywords: ['country', 'nation', 'nationality', 'national'],
+      weight: 0.9
+    },
+    
+    // Company Location
+    {
+      dbField: 'companyAddress',
+      patterns: ['company.*address', 'business.*address', 'office.*address', 'work.*address'],
+      synonyms: ['company address', 'business address', 'office address', 'work address', 'corporate address'],
+      keywords: ['company', 'business', 'office', 'work', 'corporate', 'address'],
+      weight: 0.8
+    },
+    {
+      dbField: 'companyCity',
+      patterns: ['company.*city', 'business.*city', 'office.*city', 'work.*city'],
+      synonyms: ['company city', 'business city', 'office city', 'work city', 'corporate city'],
+      keywords: ['company', 'business', 'office', 'work', 'corporate', 'city'],
+      weight: 0.75
+    },
+    {
+      dbField: 'companyState',
+      patterns: ['company.*state', 'business.*state', 'office.*state', 'work.*state'],
+      synonyms: ['company state', 'business state', 'office state', 'work state', 'corporate state'],
+      keywords: ['company', 'business', 'office', 'work', 'corporate', 'state'],
+      weight: 0.75
+    },
+    {
+      dbField: 'companyCountry',
+      patterns: ['company.*country', 'business.*country', 'office.*country', 'work.*country'],
+      synonyms: ['company country', 'business country', 'office country', 'work country', 'corporate country'],
+      keywords: ['company', 'business', 'office', 'work', 'corporate', 'country'],
+      weight: 0.75
     }
   ];
 
@@ -270,27 +374,40 @@ class CSVFieldMapper {
 
     // Assign mappings, ensuring no field is used twice
     for (const score of scores) {
-      if (!mapping[score.header] && !usedFields.has(score.field) && score.confidence > 0.5) {
-        mapping[score.header] = score.field;
-        usedFields.add(score.field);
+      if (!usedFields.has(score.field) && !mapping[score.header]) {
+        // Only assign if confidence is high enough and field hasn't been used
+        if (score.confidence >= 0.4) {
+          mapping[score.header] = score.field;
+          usedFields.add(score.field);
+        }
       }
     }
 
+    console.log(`🧠 NLP Auto-mapping results for ${headers.length} headers:`, mapping);
+    console.log(`📊 Mapped ${Object.keys(mapping).length} fields with enhanced patterns`);
+    
     return mapping;
   }
 
   /**
-   * Get confidence scores for a mapping
+   * Get mapping confidence scores for each header
    */
   public getMappingConfidence(headers: string[], mapping: Record<string, string>): Record<string, number> {
     const confidence: Record<string, number> = {};
 
-    for (const [header, field] of Object.entries(mapping)) {
-      const pattern = this.fieldPatterns.find(p => p.dbField === field);
-      if (pattern) {
-        const patternScore = this.calculatePatternScore(header, pattern);
-        const contextScore = this.calculateContextualScore(header, headers, pattern);
-        confidence[header] = Math.min(patternScore + contextScore, 1.0);
+    for (const header of headers) {
+      const mappedField = mapping[header];
+      if (mappedField) {
+        const pattern = this.fieldPatterns.find(p => p.dbField === mappedField);
+        if (pattern) {
+          const score = this.calculatePatternScore(header, pattern);
+          const contextScore = this.calculateContextualScore(header, headers, pattern);
+          confidence[header] = Math.min(score + contextScore, 1.0);
+        } else {
+          confidence[header] = 0.3;
+        }
+      } else {
+        confidence[header] = 0;
       }
     }
 
@@ -315,7 +432,8 @@ class CSVFieldMapper {
       }
     }
 
-    return alternatives.sort((a, b) => b.confidence - a.confidence).slice(0, 3);
+    // Sort by confidence descending
+    return alternatives.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
   }
 }
 
