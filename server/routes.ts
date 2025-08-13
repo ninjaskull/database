@@ -306,8 +306,13 @@ async function processCSVFile(filePath: string, jobId: string, options: any) {
         // Map CSV fields to database fields
         headers.forEach((header, index) => {
           const dbField = fieldMapping[header];
-          if (dbField && values[index]) {
-            contactData[dbField] = values[index];
+          if (dbField && values[index] && values[index] !== '') {
+            // Handle specific field mappings and avoid duplicates
+            if (dbField === 'email' && !contactData.email) {
+              contactData[dbField] = values[index];
+            } else if (dbField !== 'email') {
+              contactData[dbField] = values[index];
+            }
           }
         });
         
@@ -376,8 +381,9 @@ async function processCSVFile(filePath: string, jobId: string, options: any) {
           continue;
         }
         
-        // Ensure required fields
-        if (!contactData.fullName && !contactData.firstName && !contactData.lastName) {
+        // Ensure required fields - need at least one name field or email
+        if (!contactData.fullName && !contactData.firstName && !contactData.lastName && !contactData.email) {
+          console.log(`Skipping row - no name or email: ${JSON.stringify(contactData)}`);
           errors++;
           processed++;
           continue;
