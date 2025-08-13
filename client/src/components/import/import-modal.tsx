@@ -27,14 +27,25 @@ export function ImportModal() {
   const { toast } = useToast();
 
   const { data: importJob } = useQuery<ImportJob>({
-    queryKey: ['/api/import', jobId],
+    queryKey: ['import', jobId],
+    queryFn: async () => {
+      const response = await fetch(`/api/import/${jobId}`);
+      if (!response.ok) throw new Error('Failed to fetch import status');
+      return response.json();
+    },
     enabled: !!jobId && step === 'progress',
     refetchInterval: 1000,
   });
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const response = await apiRequest('POST', '/api/import', formData);
+      const response = await fetch('/api/import', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`);
+      }
       return await response.json();
     },
     onSuccess: (data) => {
@@ -158,7 +169,7 @@ export function ImportModal() {
 
   // Check if import is complete
   if (importJob?.status === 'completed' && step === 'progress') {
-    queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+    queryClient.invalidateQueries({ queryKey: ['contacts'] });
     setStep('complete');
   }
 
