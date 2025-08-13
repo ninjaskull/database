@@ -441,43 +441,105 @@ export function SmartImportWizard() {
                 <ScrollArea className="h-96">
                   <div className="space-y-3">
                     {fieldMappings.map((mapping, index) => (
-                      <div key={mapping.csvHeader} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{mapping.csvHeader}</span>
-                            <Badge 
-                              variant="outline" 
-                              className={`text-xs ${getConfidenceColor(mapping.confidence)}`}
-                            >
-                              {Math.round(mapping.confidence * 100)}%
-                            </Badge>
-                          </div>
+                      <div key={mapping.csvHeader} className="grid grid-cols-3 gap-4 p-4 border rounded-lg items-center">
+                        <div className="col-span-1">
+                          <div className="font-medium text-sm">{mapping.csvHeader}</div>
                           <div className="text-xs text-gray-500 truncate">{mapping.sample}</div>
                         </div>
-                        <div className="flex-1 max-w-xs ml-4">
+                        <div className="col-span-1 flex justify-center">
+                          <Badge 
+                            variant="outline" 
+                            className={`text-xs ${getConfidenceColor(mapping.confidence)}`}
+                          >
+                            {Math.round(mapping.confidence * 100)}% confidence
+                          </Badge>
+                        </div>
+                        <div className="col-span-1">
                           <Select
                             value={mapping.dbField}
                             onValueChange={(value) => handleMappingChange(index, value)}
                           >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
+                            <SelectTrigger className="w-full min-w-[200px]">
+                              <SelectValue placeholder="Select field..." />
                             </SelectTrigger>
-                            <SelectContent className="max-h-80 overflow-y-auto">
+                            <SelectContent className="max-h-80 overflow-y-auto" position="popper" sideOffset={5}>
                               <SelectItem value="skip">🚫 Skip Column</SelectItem>
-                              {Object.entries(fieldsByCategory).map(([category, fields]) => (
-                                <div key={category}>
-                                  <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                    {category}
-                                  </div>
-                                  {fields.map((field) => (
-                                    <SelectItem key={field.value} value={field.value}>
-                                      <span className="flex items-center gap-2">
-                                        <span>{field.icon}</span>
-                                        <span>{field.label}</span>
-                                      </span>
-                                    </SelectItem>
-                                  ))}
-                                </div>
+                              
+                              {/* Personal Information */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Personal</div>
+                              {databaseFields.filter(f => f.category === 'Personal').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              
+                              {/* Phone Numbers */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone Numbers</div>
+                              {databaseFields.filter(f => f.category === 'Phone').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              
+                              {/* Company Information */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</div>
+                              {databaseFields.filter(f => f.category === 'Company').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              
+                              {/* Social Media */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Social</div>
+                              {databaseFields.filter(f => f.category === 'Social').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              
+                              {/* Location */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Location</div>
+                              {databaseFields.filter(f => f.category === 'Location').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              
+                              {/* Company Location */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Company Location</div>
+                              {databaseFields.filter(f => f.category === 'Company Location').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                              
+                              {/* Auto-Enriched */}
+                              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">Auto-Enriched</div>
+                              {databaseFields.filter(f => f.category === 'Auto-Enriched').map((field) => (
+                                <SelectItem key={field.value} value={field.value}>
+                                  <span className="flex items-center gap-2">
+                                    <span>{field.icon}</span>
+                                    <span>{field.label}</span>
+                                  </span>
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
