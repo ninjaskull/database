@@ -8,19 +8,27 @@ export async function enrichContactData(contact: Partial<InsertContact>): Promis
     enriched.emailDomain = contact.email.split('@')[1];
   }
   
-  // Extract country code from phone number
+  // Extract country code and country from phone number
   if (contact.mobilePhone && !contact.countryCode) {
     enriched.countryCode = extractCountryCode(contact.mobilePhone);
   }
   
+  // Determine country from phone if not already set
+  if (contact.mobilePhone && !contact.country) {
+    const phoneCountry = getCountryFromPhone(contact.mobilePhone);
+    if (phoneCountry !== 'Unknown') {
+      enriched.country = phoneCountry;
+    }
+  }
+  
   // Determine timezone from country
-  if (contact.country && !contact.timezone) {
-    enriched.timezone = getTimezoneFromCountry(contact.country);
+  if (enriched.country && !contact.timezone) {
+    enriched.timezone = getTimezoneFromCountry(enriched.country);
   }
   
   // Determine region from country
-  if (contact.country && !contact.region) {
-    enriched.region = getRegionFromCountry(contact.country);
+  if (enriched.country && !contact.region) {
+    enriched.region = getRegionFromCountry(enriched.country);
   }
   
   // Determine business type from industry
@@ -33,10 +41,8 @@ export async function enrichContactData(contact: Partial<InsertContact>): Promis
     enriched.technologyCategory = categorizeTechnologies(contact.technologies);
   }
   
-  // Calculate lead score
-  if (!contact.leadScore) {
-    enriched.leadScore = String(calculateLeadScore(enriched));
-  }
+  // Calculate lead score (always recalculate to ensure dynamic scoring)
+  enriched.leadScore = String(calculateLeadScore(enriched));
   
   return enriched;
 }
@@ -54,6 +60,40 @@ function extractCountryCode(phone: string): string {
     return '+33'; // France
   } else if (cleaned.startsWith('81')) {
     return '+81'; // Japan
+  } else if (cleaned.startsWith('91')) {
+    return '+91'; // India
+  } else if (cleaned.startsWith('61')) {
+    return '+61'; // Australia
+  } else if (cleaned.startsWith('86')) {
+    return '+86'; // China
+  } else if (cleaned.startsWith('65')) {
+    return '+65'; // Singapore
+  }
+  
+  return 'Unknown';
+}
+
+function getCountryFromPhone(phone: string): string {
+  const cleaned = phone.replace(/\D/g, '');
+  
+  if (cleaned.startsWith('1') && cleaned.length === 11) {
+    return 'United States'; // Default to US for +1
+  } else if (cleaned.startsWith('44')) {
+    return 'United Kingdom';
+  } else if (cleaned.startsWith('49')) {
+    return 'Germany';
+  } else if (cleaned.startsWith('33')) {
+    return 'France';
+  } else if (cleaned.startsWith('81')) {
+    return 'Japan';
+  } else if (cleaned.startsWith('91')) {
+    return 'India';
+  } else if (cleaned.startsWith('61')) {
+    return 'Australia';
+  } else if (cleaned.startsWith('86')) {
+    return 'China';
+  } else if (cleaned.startsWith('65')) {
+    return 'Singapore';
   }
   
   return 'Unknown';
