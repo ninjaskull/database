@@ -638,13 +638,17 @@ export class DatabaseStorage implements IStorage {
     let autoFilledFields: string[] = [];
     let activityDescription = 'Contact information updated';
 
-    // Check if company name is being changed or added
+    // Check if company name is being changed or added, or if company exists but fields are missing
     const newCompany = contactData.company;
     const oldCompany = existingContact.company;
+    const companyToCheck = newCompany || oldCompany;
     
-    if (newCompany && newCompany.trim() && newCompany !== oldCompany) {
-      // Company changed or added - try to auto-fill company details
-      const companyTemplate = await this.getCompanyTemplate(newCompany);
+    console.log(`Auto-fill check: newCompany="${newCompany}", oldCompany="${oldCompany}", companyToCheck="${companyToCheck}"`);
+    
+    if (companyToCheck && companyToCheck.trim()) {
+      // Company exists - try to auto-fill missing company details
+      const companyTemplate = await this.getCompanyTemplate(companyToCheck);
+      console.log(`Company template found:`, companyTemplate ? 'Yes' : 'No', companyTemplate ? Object.keys(companyTemplate) : []);
       
       if (companyTemplate) {
         // Merge current contact data with updates to see what fields are empty
@@ -657,13 +661,18 @@ export class DatabaseStorage implements IStorage {
           const currentValue = (mergedData as any)[field];
           const templateValue = companyTemplate[field];
           
+          console.log(`Field "${field}": current="${currentValue}", template="${templateValue}", isEmpty="${!currentValue || currentValue === ''}"`);
+          
           // Only fill if the field is empty and we have template data
           if ((!currentValue || currentValue === '') && templateValue !== null && templateValue !== undefined) {
             (contactData as any)[field] = templateValue;
             autoFilledFields.push(field as string);
+            console.log(`Auto-filled field "${field}" with value:`, templateValue);
           }
         });
 
+        console.log(`Auto-fill completed. Fields filled: ${autoFilledFields.length}`, autoFilledFields);
+        
         if (autoFilledFields.length > 0) {
           activityDescription += ` with auto-filled company details: ${autoFilledFields.join(', ')}`;
         }
