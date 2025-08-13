@@ -311,14 +311,69 @@ async function processCSVFile(filePath: string, jobId: string, options: any) {
           }
         });
         
+        // Check for duplicates using both exact and fuzzy matching
+        let duplicateContacts: any[] = [];
+        
         if (contactData.email) {
-          // Check for duplicates
-          const duplicateContacts = await storage.findDuplicateContacts(contactData.email, contactData.company);
-          if (duplicateContacts.length > 0) {
+          duplicateContacts = await storage.findDuplicateContacts(contactData.email, contactData.company);
+        }
+        
+        // If no exact email duplicate, try fuzzy matching
+        if (duplicateContacts.length === 0) {
+          duplicateContacts = await storage.findFuzzyDuplicateContacts(
+            contactData.email,
+            contactData.fullName,
+            contactData.company
+          );
+        }
+        
+        // If duplicates found, decide whether to update or skip
+        if (duplicateContacts.length > 0) {
+          const existingContact = duplicateContacts[0];
+          
+          // Check if we have new data to add (update scenario)
+          const hasNewData = Object.keys(contactData).some(key => {
+            const newValue = contactData[key];
+            const existingValue = existingContact[key];
+            return newValue && newValue !== '' && (!existingValue || existingValue === '');
+          });
+          
+          if (hasNewData) {
+            // Update existing contact with new data
+            const updateData: any = {};
+            Object.keys(contactData).forEach(key => {
+              const newValue = contactData[key];
+              const existingValue = existingContact[key];
+              if (newValue && newValue !== '' && (!existingValue || existingValue === '')) {
+                updateData[key] = newValue;
+              }
+            });
+            
+            if (Object.keys(updateData).length > 0) {
+              // Enrich the update data
+              const enrichedUpdateData = await enrichContactData(updateData);
+              
+              await storage.updateContact(existingContact.id, enrichedUpdateData);
+              
+              // Log update activity
+              await storage.createContactActivity({
+                contactId: existingContact.id,
+                activityType: 'updated',
+                description: `Contact updated during CSV import with new data: ${Object.keys(updateData).join(', ')}`,
+                changes: updateData,
+              });
+              
+              console.log(`Updated existing contact: ${existingContact.fullName} with new data`);
+              successful++;
+            } else {
+              duplicates++;
+            }
+          } else {
             duplicates++;
-            processed++;
-            continue;
           }
+          
+          processed++;
+          continue;
         }
         
         // Ensure required fields

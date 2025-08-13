@@ -32,6 +32,7 @@ export interface IStorage {
   
   // Duplicate detection
   findDuplicateContacts(email: string, company?: string): Promise<Contact[]>;
+  findFuzzyDuplicateContacts(email?: string, fullName?: string, company?: string): Promise<Contact[]>;
   
   // Stats
   getContactStats(): Promise<{
@@ -233,6 +234,42 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(contacts)
       .where(and(...conditions));
+  }
+
+  async findFuzzyDuplicateContacts(
+    email?: string, 
+    fullName?: string, 
+    company?: string
+  ): Promise<Contact[]> {
+    const conditions = [eq(contacts.isDeleted, false)];
+    
+    // Exact email match is highest priority
+    if (email) {
+      conditions.push(eq(contacts.email, email));
+      return await db
+        .select()
+        .from(contacts)
+        .where(and(...conditions));
+    }
+    
+    // If no email, try fuzzy name matching with company
+    if (fullName && company) {
+      const nameWords = fullName.toLowerCase().split(' ').filter(w => w.length > 1);
+      if (nameWords.length >= 2) {
+        // Use SQL LIKE for fuzzy matching
+        conditions.push(
+          sql`LOWER(${contacts.fullName}) LIKE ${`%${nameWords[0]}%`} AND LOWER(${contacts.fullName}) LIKE ${`%${nameWords[nameWords.length - 1]}%`}`
+        );
+        conditions.push(eq(contacts.company, company));
+        
+        return await db
+          .select()
+          .from(contacts)
+          .where(and(...conditions));
+      }
+    }
+    
+    return [];
   }
 
   async getContactStats() {
