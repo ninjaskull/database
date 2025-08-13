@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ContactDetailModal } from "./contact-detail-modal";
+import { AdvancedContactDialog } from "./advanced-contact-dialog";
 import type { Contact } from "@shared/schema";
 
 interface ContactsTableProps {
@@ -26,6 +27,8 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [advancedDialogContact, setAdvancedDialogContact] = useState<Contact | null>(null);
+  const [advancedDialogMode, setAdvancedDialogMode] = useState<'view' | 'edit'>('view');
   const limit = 20;
 
   // Clean filters to exclude empty/"all" values
@@ -263,43 +266,50 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedContact(contact)} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-                        <i className="fas fa-eye"></i>
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                        onClick={() => {
-                          const updatedName = prompt('Edit contact name:', contact.fullName || '');
-                          if (updatedName && updatedName !== contact.fullName) {
-                            // Inline edit implementation
-                            fetch(`/api/contacts/${contact.id}`, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ fullName: updatedName })
-                            }).then(() => window.location.reload());
-                          }
-                        }}
-                        data-testid={`button-edit-${contact.id}`}
-                      >
-                        <i className="fas fa-edit"></i>
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                        onClick={async () => {
-                          if (confirm(`Delete ${contact.fullName}?`)) {
-                            await fetch(`/api/contacts/${contact.id}`, { method: 'DELETE' });
-                            window.location.reload();
-                          }
-                        }}
-                        data-testid={`button-delete-${contact.id}`}
-                      >
-                        <i className="fas fa-trash"></i>
-                      </Button>
+                    <TableCell className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex space-x-1">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => {
+                            setAdvancedDialogContact(contact);
+                            setAdvancedDialogMode('view');
+                          }}
+                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          data-testid={`button-view-${contact.id}`}
+                          title="Advanced View"
+                        >
+                          <i className="fas fa-eye"></i>
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => {
+                            setAdvancedDialogContact(contact);
+                            setAdvancedDialogMode('edit');
+                          }}
+                          className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                          data-testid={`button-edit-${contact.id}`}
+                          title="Advanced Edit"
+                        >
+                          <i className="fas fa-edit"></i>
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          onClick={async () => {
+                            if (confirm(`Delete ${contact.fullName}?`)) {
+                              await fetch(`/api/contacts/${contact.id}`, { method: 'DELETE' });
+                              window.location.reload();
+                            }
+                          }}
+                          data-testid={`button-delete-${contact.id}`}
+                          title="Delete Contact"
+                        >
+                          <i className="fas fa-trash"></i>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -378,6 +388,15 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
           contact={selectedContact}
           isOpen={!!selectedContact}
           onClose={() => setSelectedContact(null)}
+        />
+      )}
+
+      {advancedDialogContact && (
+        <AdvancedContactDialog
+          contact={advancedDialogContact}
+          isOpen={!!advancedDialogContact}
+          onClose={() => setAdvancedDialogContact(null)}
+          mode={advancedDialogMode}
         />
       )}
     </>
