@@ -170,9 +170,17 @@ export class StreamingCSVParser {
     try {
       const analysis = await this.analyzeCSVFile(filePath);
       
+      console.log('CSV Analysis Results:', {
+        totalRows: analysis.totalRows,
+        headerCount: analysis.headers.length,
+        headers: analysis.headers,
+        previewCount: analysis.preview.length
+      });
+      
       // Check for empty file
       if (analysis.totalRows === 0) {
         issues.push('File appears to be empty');
+        console.log('Validation failed: Empty file');
         return { isValid: false, issues, recommendations };
       }
 
@@ -180,6 +188,7 @@ export class StreamingCSVParser {
       if (analysis.headers.length === 0) {
         issues.push('No headers detected');
         recommendations.push('Ensure first row contains column headers');
+        console.log('Validation failed: No headers detected');
       }
 
       // Check for duplicate headers - Papa Parse automatically renames duplicates
@@ -191,14 +200,15 @@ export class StreamingCSVParser {
         recommendations.push(`${renamedHeaders.length} duplicate column headers were automatically renamed`);
       }
 
-      // Check for empty headers
+      // Check for empty headers - make this less strict
       const emptyHeaders = analysis.headers.filter(h => !h || h.trim() === '');
       if (emptyHeaders.length > 0) {
-        issues.push(`${emptyHeaders.length} empty column headers found`);
-        recommendations.push('Add names to all columns or remove empty columns');
+        console.log(`Found ${emptyHeaders.length} empty headers, but allowing file to proceed`);
+        recommendations.push(`${emptyHeaders.length} empty column headers found - these will be ignored during import`);
+        // Don't add this as an issue that blocks import
       }
 
-      // Check data consistency in preview
+      // Check data consistency in preview - make this less strict
       if (analysis.preview.length > 0) {
         const firstRowKeys = Object.keys(analysis.preview[0]);
         const inconsistentRows = analysis.preview.filter(row => 
@@ -206,8 +216,9 @@ export class StreamingCSVParser {
         );
         
         if (inconsistentRows.length > 0) {
-          issues.push('Inconsistent number of columns detected');
-          recommendations.push('Ensure all rows have the same number of columns');
+          console.log(`Found ${inconsistentRows.length} rows with inconsistent columns, but allowing import to proceed`);
+          recommendations.push(`${inconsistentRows.length} rows have inconsistent column counts - missing values will be handled automatically`);
+          // Don't add this as a blocking issue
         }
       }
 
