@@ -559,6 +559,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Comprehensive Analytics Endpoints
+  app.get("/api/analytics/comprehensive", requireAuth, async (req, res) => {
+    try {
+      const analytics = await storage.getComprehensiveAnalytics();
+      res.json(analytics);
+    } catch (error) {
+      console.error('Comprehensive analytics error:', error);
+      res.status(500).json({ message: "Failed to fetch comprehensive analytics" });
+    }
+  });
+
+  app.get("/api/analytics/trends", requireAuth, async (req, res) => {
+    try {
+      const trends = await storage.getAnalyticsTrends();
+      res.json(trends);
+    } catch (error) {
+      console.error('Analytics trends error:', error);
+      res.status(500).json({ message: "Failed to fetch analytics trends" });
+    }
+  });
+
+  app.get("/api/analytics/activities", requireAuth, async (req, res) => {
+    try {
+      const activities = await storage.getAnalyticsActivities();
+      res.json(activities);
+    } catch (error) {
+      console.error('Analytics activities error:', error);
+      res.status(500).json({ message: "Failed to fetch analytics activities" });
+    }
+  });
+
+  app.get("/api/analytics/imports", requireAuth, async (req, res) => {
+    try {
+      const imports = await storage.getAnalyticsImports();
+      res.json(imports);
+    } catch (error) {
+      console.error('Analytics imports error:', error);
+      res.status(500).json({ message: "Failed to fetch analytics imports" });
+    }
+  });
+
   // Get contact activities
   app.get("/api/contacts/:id/activities", async (req, res) => {
     try {
