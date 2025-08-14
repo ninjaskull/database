@@ -182,11 +182,13 @@ export class StreamingCSVParser {
         recommendations.push('Ensure first row contains column headers');
       }
 
-      // Check for duplicate headers
-      const headerSet = new Set(analysis.headers);
-      if (headerSet.size !== analysis.headers.length) {
-        issues.push('Duplicate column headers detected');
-        recommendations.push('Remove duplicate column headers');
+      // Check for duplicate headers - Papa Parse automatically renames duplicates
+      // so we only warn if there are truly problematic duplicates
+      const duplicatePattern = /__\d+$/; // Papa Parse adds __1, __2, etc. to duplicates
+      const renamedHeaders = analysis.headers.filter(h => duplicatePattern.test(h));
+      if (renamedHeaders.length > 0) {
+        console.log('Duplicate headers found and renamed.', renamedHeaders.map(h => h.replace(duplicatePattern, '')));
+        recommendations.push(`${renamedHeaders.length} duplicate column headers were automatically renamed`);
       }
 
       // Check for empty headers

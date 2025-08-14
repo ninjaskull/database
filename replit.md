@@ -2,7 +2,11 @@
 
 This is a modern full-stack CRM application for managing contact databases. Built with React on the frontend, Express on the backend, and PostgreSQL with Drizzle ORM for data management. The application features comprehensive contact management with data enrichment capabilities, CSV import functionality, and real-time activity tracking.
 
-## Recent Changes (Aug 13, 2025)
+## Recent Changes (Aug 14, 2025)
+- **Fixed CSV Import Duplicate Headers Issue**: Resolved validation error that was rejecting CSV files with duplicate column headers. The system now properly handles Papa Parse's automatic header renaming instead of blocking valid files.
+- **Added Missing TypeScript Types**: Installed @types/papaparse to resolve LSP diagnostics and improve code quality.
+
+## Previous Changes (Aug 13, 2025)
 - **Implemented Secure Authentication System**: Added login-only system with hardcoded credentials (amit@fallowl.com / DemonFlare@254039)
 - **Created Comprehensive Settings Page**: Built 5-section settings interface with Profile, Security, Notifications, System, and Appearance tabs
 - **Added Session Management**: Implemented secure token-based authentication with PostgreSQL session storage
