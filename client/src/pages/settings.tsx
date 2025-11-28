@@ -22,7 +22,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   User, Settings, Bell, Shield, Database, Download, Upload, 
   Trash2, RefreshCw, Eye, EyeOff, Save, AlertTriangle,
-  Mail, Phone, Globe, Clock, Palette, Monitor, Sun, Moon
+  Mail, Phone, Globe, Clock, Palette, Monitor, Sun, Moon,
+  Key, Copy, Plus, Check, XCircle
 } from "lucide-react";
 
 // Settings schemas
@@ -75,12 +76,27 @@ type NotificationData = z.infer<typeof notificationSchema>;
 type SystemData = z.infer<typeof systemSchema>;
 type AppearanceData = z.infer<typeof appearanceSchema>;
 
+interface ApiKeyResponse {
+  id: string;
+  label: string;
+  scopes: string[] | null;
+  rateLimitPerMinute: number | null;
+  requestCount: number | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+  isActive: boolean;
+}
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("profile");
   const [showPassword, setShowPassword] = useState(false);
+  const [newKeyLabel, setNewKeyLabel] = useState("");
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // Profile form
   const profileForm = useForm<ProfileData>({
@@ -296,6 +312,59 @@ export default function SettingsPage() {
     },
   });
 
+  // API Keys query
+  const { data: apiKeysData, isLoading: apiKeysLoading } = useQuery<{ success: boolean; keys: ApiKeyResponse[] }>({
+    queryKey: ["/api/api-keys"],
+  });
+
+  // Create API key mutation
+  const createApiKeyMutation = useMutation({
+    mutationFn: async (label: string) => {
+      return await apiRequest("/api/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ label }),
+      });
+    },
+    onSuccess: (response) => {
+      setNewlyCreatedKey(response.key);
+      setNewKeyLabel("");
+      toast({ title: "API key created successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/api-keys"] });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to create API key",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Revoke API key mutation
+  const revokeApiKeyMutation = useMutation({
+    mutationFn: async (keyId: string) => {
+      return await apiRequest(`/api/api-keys/${keyId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "API key revoked successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/api-keys"] });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to revoke API key",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const copyApiKey = async (key: string) => {
+    await navigator.clipboard.writeText(key);
+    setCopiedKey(true);
+    toast({ title: "API key copied to clipboard" });
+    setTimeout(() => setCopiedKey(false), 2000);
+  };
+
   const handleDeleteAccount = async () => {
     if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
       try {
@@ -332,7 +401,7 @@ export default function SettingsPage() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-5 lg:w-fit">
+              <TabsList className="grid w-full grid-cols-6 lg:w-fit">
                 <TabsTrigger value="profile" className="flex items-center">
                   <User className="mr-2 h-4 w-4" />
                   Profile
@@ -352,6 +421,10 @@ export default function SettingsPage() {
                 <TabsTrigger value="appearance" className="flex items-center">
                   <Palette className="mr-2 h-4 w-4" />
                   Appearance
+                </TabsTrigger>
+                <TabsTrigger value="api-keys" className="flex items-center">
+                  <Key className="mr-2 h-4 w-4" />
+                  API Keys
                 </TabsTrigger>
               </TabsList>
 
@@ -945,6 +1018,161 @@ export default function SettingsPage() {
                         </Button>
                       </form>
                     </Form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* API Keys Settings */}
+              <TabsContent value="api-keys" className="space-y-6">
+                <Card data-testid="api-keys-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Key className="mr-2 h-5 w-5" />
+                      API Keys
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <Alert>
+                      <Key className="h-4 w-4" />
+                      <AlertDescription>
+                        API keys allow external applications to access your prospect data via the public API.
+                        Keep your keys secure and never share them publicly.
+                      </AlertDescription>
+                    </Alert>
+
+                    {/* Create New Key */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">Create New API Key</h3>
+                      <div className="flex gap-4">
+                        <Input
+                          placeholder="Key label (e.g., Production, Development)"
+                          value={newKeyLabel}
+                          onChange={(e) => setNewKeyLabel(e.target.value)}
+                          className="max-w-sm"
+                          data-testid="input-api-key-label"
+                        />
+                        <Button
+                          onClick={() => createApiKeyMutation.mutate(newKeyLabel)}
+                          disabled={!newKeyLabel.trim() || createApiKeyMutation.isPending}
+                          data-testid="button-create-api-key"
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          {createApiKeyMutation.isPending ? "Creating..." : "Create Key"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Newly Created Key Display */}
+                    {newlyCreatedKey && (
+                      <Alert className="border-green-500 bg-green-50 dark:bg-green-900/20">
+                        <Check className="h-4 w-4 text-green-600" />
+                        <AlertDescription className="space-y-2">
+                          <p className="font-medium text-green-800 dark:text-green-200">
+                            API Key created successfully! Copy it now - it won't be shown again.
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <code className="bg-white dark:bg-gray-800 p-2 rounded text-sm font-mono flex-1 break-all">
+                              {newlyCreatedKey}
+                            </code>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => copyApiKey(newlyCreatedKey)}
+                              data-testid="button-copy-new-key"
+                            >
+                              {copiedKey ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setNewlyCreatedKey(null)}
+                            className="mt-2"
+                          >
+                            Dismiss
+                          </Button>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    <Separator />
+
+                    {/* Existing Keys List */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">Your API Keys</h3>
+                      
+                      {apiKeysLoading ? (
+                        <p className="text-gray-500">Loading API keys...</p>
+                      ) : apiKeysData?.keys?.length === 0 ? (
+                        <p className="text-gray-500">No API keys yet. Create one above to get started.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {apiKeysData?.keys?.map((apiKey) => (
+                            <div
+                              key={apiKey.id}
+                              className={`flex items-center justify-between p-4 rounded-lg border ${
+                                apiKey.isActive 
+                                  ? "border-gray-200 dark:border-gray-700" 
+                                  : "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20"
+                              }`}
+                              data-testid={`api-key-item-${apiKey.id}`}
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{apiKey.label}</span>
+                                  {apiKey.isActive ? (
+                                    <Badge variant="default" className="bg-green-500">Active</Badge>
+                                  ) : (
+                                    <Badge variant="destructive">Revoked</Badge>
+                                  )}
+                                </div>
+                                <div className="text-sm text-gray-500 space-x-4">
+                                  <span>Created: {new Date(apiKey.createdAt).toLocaleDateString()}</span>
+                                  {apiKey.lastUsedAt && (
+                                    <span>Last used: {new Date(apiKey.lastUsedAt).toLocaleDateString()}</span>
+                                  )}
+                                  <span>Requests: {apiKey.requestCount || 0}</span>
+                                  <span>Rate limit: {apiKey.rateLimitPerMinute || 60}/min</span>
+                                </div>
+                              </div>
+                              {apiKey.isActive && (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (window.confirm("Are you sure you want to revoke this API key? This action cannot be undone.")) {
+                                      revokeApiKeyMutation.mutate(apiKey.id);
+                                    }
+                                  }}
+                                  disabled={revokeApiKeyMutation.isPending}
+                                  data-testid={`button-revoke-key-${apiKey.id}`}
+                                >
+                                  <XCircle className="mr-2 h-4 w-4" />
+                                  Revoke
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* API Documentation */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-medium">API Usage</h3>
+                      <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
+                        <p className="text-sm font-medium mb-2">Endpoint:</p>
+                        <code className="text-sm block mb-4">
+                          GET /api/public/prospects?linkedinUrl=https://linkedin.com/in/username
+                        </code>
+                        <p className="text-sm font-medium mb-2">Headers:</p>
+                        <code className="text-sm block">
+                          x-api-key: your-api-key-here
+                        </code>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>

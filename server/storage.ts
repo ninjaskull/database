@@ -5,6 +5,7 @@ import {
   users,
   sessions,
   enrichmentJobs,
+  apiKeys,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -16,7 +17,9 @@ import {
   type Session,
   type InsertSession,
   type EnrichmentJob,
-  type InsertEnrichmentJob
+  type InsertEnrichmentJob,
+  type ApiKey,
+  type InsertApiKey
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
@@ -94,6 +97,13 @@ export interface IStorage {
   
   // LinkedIn URL search in existing contacts
   findContactsByLinkedInUrl(linkedinUrl: string): Promise<Contact[]>;
+  
+  // API Key operations
+  createApiKey(apiKey: InsertApiKey): Promise<ApiKey>;
+  getApiKeyByHash(hashedKey: string): Promise<ApiKey | undefined>;
+  getUserApiKeys(userId: string): Promise<ApiKey[]>;
+  updateApiKeyUsage(id: string): Promise<void>;
+  revokeApiKey(id: string): Promise<boolean>;
 }
 
 // Utility function to generate full name from first and last name
@@ -1268,6 +1278,55 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(contacts.createdAt));
     
     return matchingContacts;
+  }
+
+  // API Key operations
+  async createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
+    const [newApiKey] = await db
+      .insert(apiKeys)
+      .values(apiKey)
+      .returning();
+    return newApiKey;
+  }
+
+  async getApiKeyByHash(hashedKey: string): Promise<ApiKey | undefined> {
+    const [apiKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(
+        and(
+          eq(apiKeys.hashedKey, hashedKey),
+          isNull(apiKeys.revokedAt)
+        )
+      );
+    return apiKey || undefined;
+  }
+
+  async getUserApiKeys(userId: string): Promise<ApiKey[]> {
+    return await db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.ownerUserId, userId))
+      .orderBy(desc(apiKeys.createdAt));
+  }
+
+  async updateApiKeyUsage(id: string): Promise<void> {
+    await db
+      .update(apiKeys)
+      .set({ 
+        lastUsedAt: new Date(),
+        requestCount: sql`${apiKeys.requestCount} + 1`
+      })
+      .where(eq(apiKeys.id, id));
+  }
+
+  async revokeApiKey(id: string): Promise<boolean> {
+    const [revoked] = await db
+      .update(apiKeys)
+      .set({ revokedAt: new Date() })
+      .where(eq(apiKeys.id, id))
+      .returning();
+    return !!revoked;
   }
 }
 

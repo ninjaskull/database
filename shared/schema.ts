@@ -124,6 +124,20 @@ export const enrichmentJobs = pgTable("enrichment_jobs", {
   completedAt: timestamp("completed_at"),
 });
 
+// API Keys table - for public API authentication
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  hashedKey: text("hashed_key").unique().notNull(),
+  label: text("label").notNull(),
+  ownerUserId: varchar("owner_user_id").references(() => users.id).notNull(),
+  scopes: text("scopes").array().default(sql`ARRAY['prospects:read']::text[]`),
+  rateLimitPerMinute: integer("rate_limit_per_minute").default(60),
+  requestCount: integer("request_count").default(0),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+});
+
 // Relations
 export const contactsRelations = relations(contacts, ({ many }) => ({
   activities: many(contactActivities),
@@ -180,6 +194,14 @@ export const insertEnrichmentJobSchema = createInsertSchema(enrichmentJobs).omit
   completedAt: true,
 });
 
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true,
+  createdAt: true,
+  lastUsedAt: true,
+  revokedAt: true,
+  requestCount: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -208,5 +230,7 @@ export type Session = typeof sessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type InsertEnrichmentJob = z.infer<typeof insertEnrichmentJobSchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type LinkedinEnrichmentRequest = z.infer<typeof linkedinEnrichmentRequestSchema>;
 export type LoginCredentials = z.infer<typeof loginSchema>;

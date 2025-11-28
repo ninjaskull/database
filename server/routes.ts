@@ -11,6 +11,7 @@ import { StreamingCSVParser } from "./streaming-csv-parser";
 import { advancedCSVProcessor } from "./csv-processor";
 import { authenticateUser, requireAuth, initializeDefaultUser } from "./auth";
 import { linkedinEnrichmentService } from "./linkedin-enrichment";
+import { validateApiKey, generateApiKey, hashApiKey } from "./api-auth";
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -1136,6 +1137,198 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ jobs });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch contact enrichment jobs" });
+    }
+  });
+
+  // ==========================================
+  // PUBLIC API ENDPOINTS (API Key Authentication)
+  // ==========================================
+
+  // Public API: Search prospects by LinkedIn URL
+  app.get("/api/public/prospects", validateApiKey, async (req, res) => {
+    try {
+      const linkedinUrl = req.query.linkedinUrl as string;
+      
+      if (!linkedinUrl) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required parameter",
+          message: "Please provide a linkedinUrl query parameter",
+        });
+      }
+
+      if (!linkedinUrl.includes('linkedin.com')) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid LinkedIn URL",
+          message: "The URL must be a valid LinkedIn profile URL",
+        });
+      }
+
+      console.log(`🔍 [Public API] Searching prospects by LinkedIn: ${linkedinUrl}`);
+      const prospects = await storage.findContactsByLinkedInUrl(linkedinUrl);
+
+      if (prospects.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "No prospects found",
+          message: "No prospects found with this LinkedIn URL in the database",
+        });
+      }
+
+      res.json({
+        success: true,
+        count: prospects.length,
+        prospects: prospects.map(prospect => ({
+          id: prospect.id,
+          fullName: prospect.fullName,
+          firstName: prospect.firstName,
+          lastName: prospect.lastName,
+          title: prospect.title,
+          email: prospect.email,
+          mobilePhone: prospect.mobilePhone,
+          otherPhone: prospect.otherPhone,
+          homePhone: prospect.homePhone,
+          corporatePhone: prospect.corporatePhone,
+          company: prospect.company,
+          employees: prospect.employees,
+          employeeSizeBracket: prospect.employeeSizeBracket,
+          industry: prospect.industry,
+          website: prospect.website,
+          companyLinkedIn: prospect.companyLinkedIn,
+          personLinkedIn: prospect.personLinkedIn,
+          technologies: prospect.technologies,
+          annualRevenue: prospect.annualRevenue,
+          city: prospect.city,
+          state: prospect.state,
+          country: prospect.country,
+          companyAddress: prospect.companyAddress,
+          companyCity: prospect.companyCity,
+          companyState: prospect.companyState,
+          companyCountry: prospect.companyCountry,
+          emailDomain: prospect.emailDomain,
+          countryCode: prospect.countryCode,
+          timezone: prospect.timezone,
+          leadScore: prospect.leadScore,
+          companyAge: prospect.companyAge,
+          technologyCategory: prospect.technologyCategory,
+          region: prospect.region,
+          businessType: prospect.businessType,
+        })),
+      });
+    } catch (error) {
+      console.error("[Public API] Prospect search error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
+        message: "Failed to search prospects",
+      });
+    }
+  });
+
+  // ==========================================
+  // API KEY MANAGEMENT ENDPOINTS
+  // ==========================================
+
+  // Get user's API keys
+  app.get("/api/api-keys", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const keys = await storage.getUserApiKeys(userId);
+      
+      res.json({
+        success: true,
+        keys: keys.map(key => ({
+          id: key.id,
+          label: key.label,
+          scopes: key.scopes,
+          rateLimitPerMinute: key.rateLimitPerMinute,
+          requestCount: key.requestCount,
+          lastUsedAt: key.lastUsedAt,
+          createdAt: key.createdAt,
+          revokedAt: key.revokedAt,
+          isActive: !key.revokedAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Get API keys error:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch API keys" });
+    }
+  });
+
+  // Create new API key
+  app.post("/api/api-keys", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const { label, rateLimitPerMinute } = req.body;
+
+      if (!label || typeof label !== "string" || label.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Label is required for the API key",
+        });
+      }
+
+      const { key, hashedKey } = generateApiKey();
+
+      const apiKey = await storage.createApiKey({
+        hashedKey,
+        label: label.trim(),
+        ownerUserId: userId,
+        scopes: ["prospects:read"],
+        rateLimitPerMinute: rateLimitPerMinute || 60,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "API key created successfully. Copy the key now - it won't be shown again.",
+        key,
+        apiKey: {
+          id: apiKey.id,
+          label: apiKey.label,
+          scopes: apiKey.scopes,
+          rateLimitPerMinute: apiKey.rateLimitPerMinute,
+          createdAt: apiKey.createdAt,
+        },
+      });
+    } catch (error) {
+      console.error("Create API key error:", error);
+      res.status(500).json({ success: false, message: "Failed to create API key" });
+    }
+  });
+
+  // Revoke API key
+  app.delete("/api/api-keys/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const keyId = req.params.id;
+
+      const userKeys = await storage.getUserApiKeys(userId);
+      const keyBelongsToUser = userKeys.some(key => key.id === keyId);
+
+      if (!keyBelongsToUser) {
+        return res.status(404).json({
+          success: false,
+          message: "API key not found",
+        });
+      }
+
+      const revoked = await storage.revokeApiKey(keyId);
+
+      if (revoked) {
+        res.json({
+          success: true,
+          message: "API key revoked successfully",
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to revoke API key",
+        });
+      }
+    } catch (error) {
+      console.error("Revoke API key error:", error);
+      res.status(500).json({ success: false, message: "Failed to revoke API key" });
     }
   });
 
