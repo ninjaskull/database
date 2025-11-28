@@ -312,9 +312,15 @@ export default function SettingsPage() {
     },
   });
 
-  // API Keys query
-  const { data: apiKeysData, isLoading: apiKeysLoading } = useQuery<{ success: boolean; keys: ApiKeyResponse[] }>({
+  // API Keys query - only fetch when on API Keys tab
+  const { data: apiKeysData, isLoading: apiKeysLoading, error: apiKeysError, refetch: refetchApiKeys } = useQuery<{ success: boolean; keys: ApiKeyResponse[] }>({
     queryKey: ["/api/api-keys"],
+    queryFn: async () => {
+      return await apiRequest("/api/api-keys");
+    },
+    enabled: activeTab === "api-keys",
+    staleTime: 0,
+    retry: 1,
   });
 
   // Create API key mutation
@@ -1099,10 +1105,32 @@ export default function SettingsPage() {
 
                     {/* Existing Keys List */}
                     <div className="space-y-4">
-                      <h3 className="text-lg font-medium">Your API Keys</h3>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-medium">Your API Keys</h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refetchApiKeys()}
+                          disabled={apiKeysLoading}
+                          data-testid="button-refresh-api-keys"
+                        >
+                          <RefreshCw className={`h-4 w-4 mr-2 ${apiKeysLoading ? 'animate-spin' : ''}`} />
+                          Refresh
+                        </Button>
+                      </div>
                       
                       {apiKeysLoading ? (
-                        <p className="text-gray-500">Loading API keys...</p>
+                        <div className="flex items-center gap-2 text-gray-500">
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <p>Loading API keys...</p>
+                        </div>
+                      ) : apiKeysError ? (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertDescription>
+                            Failed to load API keys. Please try refreshing or re-login if the issue persists.
+                          </AlertDescription>
+                        </Alert>
                       ) : apiKeysData?.keys?.length === 0 ? (
                         <p className="text-gray-500">No API keys yet. Create one above to get started.</p>
                       ) : (
