@@ -91,6 +91,9 @@ export interface IStorage {
   getEnrichmentJob(id: string): Promise<EnrichmentJob | undefined>;
   getEnrichmentJobsByContact(contactId: string): Promise<EnrichmentJob[]>;
   getRecentEnrichmentJobs(limit?: number): Promise<EnrichmentJob[]>;
+  
+  // LinkedIn URL search in existing contacts
+  findContactsByLinkedInUrl(linkedinUrl: string): Promise<Contact[]>;
 }
 
 // Utility function to generate full name from first and last name
@@ -1234,6 +1237,37 @@ export class DatabaseStorage implements IStorage {
       .from(enrichmentJobs)
       .orderBy(desc(enrichmentJobs.createdAt))
       .limit(limit);
+  }
+
+  async findContactsByLinkedInUrl(linkedinUrl: string): Promise<Contact[]> {
+    // Normalize the LinkedIn URL for flexible matching
+    // Handles variations like linkedin.com/in/username, www.linkedin.com/in/username, etc.
+    const normalizedUrl = linkedinUrl
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/\/$/, '');
+    
+    // Extract the username part if possible
+    const usernameMatch = normalizedUrl.match(/linkedin\.com\/in\/([^/?]+)/);
+    const username = usernameMatch ? usernameMatch[1] : null;
+    
+    // Search for contacts with matching LinkedIn URL
+    // Use case-insensitive matching and handle URL variations
+    const matchingContacts = await db
+      .select()
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.isDeleted, false),
+          username 
+            ? sql`LOWER(${contacts.personLinkedIn}) LIKE ${`%linkedin.com/in/${username}%`}`
+            : ilike(contacts.personLinkedIn, `%${normalizedUrl}%`)
+        )
+      )
+      .orderBy(desc(contacts.createdAt));
+    
+    return matchingContacts;
   }
 }
 
