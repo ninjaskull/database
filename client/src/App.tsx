@@ -8,6 +8,7 @@ import Contacts from "@/pages/contacts";
 import ImportPage from "@/pages/import";
 import SettingsPage from "@/pages/settings";
 import Analytics from "@/pages/analytics";
+import LinkedInSearch from "@/pages/linkedin-search";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/import" component={ImportPage} />
+      <Route path="/linkedin-search" component={LinkedInSearch} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />

@@ -4,6 +4,7 @@ import {
   importJobs,
   users,
   sessions,
+  enrichmentJobs,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -13,7 +14,9 @@ import {
   type User,
   type InsertUser,
   type Session,
-  type InsertSession
+  type InsertSession,
+  type EnrichmentJob,
+  type InsertEnrichmentJob
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
@@ -81,6 +84,13 @@ export interface IStorage {
   createContactWithAutoFill(contact: InsertContact): Promise<Contact>;
   updateContactWithAutoFill(id: string, updates: Partial<InsertContact>): Promise<Contact | undefined>;
   bulkAutoFillCompanyDetails(): Promise<{ processed: number; updated: number; companiesProcessed: string[] }>;
+  
+  // LinkedIn enrichment operations
+  createEnrichmentJob(job: InsertEnrichmentJob): Promise<EnrichmentJob>;
+  updateEnrichmentJob(id: string, updates: Partial<EnrichmentJob>): Promise<EnrichmentJob | undefined>;
+  getEnrichmentJob(id: string): Promise<EnrichmentJob | undefined>;
+  getEnrichmentJobsByContact(contactId: string): Promise<EnrichmentJob[]>;
+  getRecentEnrichmentJobs(limit?: number): Promise<EnrichmentJob[]>;
 }
 
 // Utility function to generate full name from first and last name
@@ -1182,6 +1192,48 @@ export class DatabaseStorage implements IStorage {
       updated,
       companiesProcessed
     };
+  }
+
+  // LinkedIn Enrichment Job Methods
+  async createEnrichmentJob(job: InsertEnrichmentJob): Promise<EnrichmentJob> {
+    const [enrichmentJob] = await db
+      .insert(enrichmentJobs)
+      .values(job)
+      .returning();
+    return enrichmentJob;
+  }
+
+  async updateEnrichmentJob(id: string, updates: Partial<EnrichmentJob>): Promise<EnrichmentJob | undefined> {
+    const [enrichmentJob] = await db
+      .update(enrichmentJobs)
+      .set(updates)
+      .where(eq(enrichmentJobs.id, id))
+      .returning();
+    return enrichmentJob || undefined;
+  }
+
+  async getEnrichmentJob(id: string): Promise<EnrichmentJob | undefined> {
+    const [enrichmentJob] = await db
+      .select()
+      .from(enrichmentJobs)
+      .where(eq(enrichmentJobs.id, id));
+    return enrichmentJob || undefined;
+  }
+
+  async getEnrichmentJobsByContact(contactId: string): Promise<EnrichmentJob[]> {
+    return await db
+      .select()
+      .from(enrichmentJobs)
+      .where(eq(enrichmentJobs.contactId, contactId))
+      .orderBy(desc(enrichmentJobs.createdAt));
+  }
+
+  async getRecentEnrichmentJobs(limit: number = 20): Promise<EnrichmentJob[]> {
+    return await db
+      .select()
+      .from(enrichmentJobs)
+      .orderBy(desc(enrichmentJobs.createdAt))
+      .limit(limit);
   }
 }
 

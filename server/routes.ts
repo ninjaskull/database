@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
-import { insertContactSchema, insertImportJobSchema, loginSchema } from "@shared/schema";
+import { insertContactSchema, insertImportJobSchema, loginSchema, linkedinEnrichmentRequestSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import { enrichContactData } from "../client/src/lib/data-enrichment";
@@ -10,6 +10,7 @@ import { csvFieldMapper } from "./nlp-mapper";
 import { StreamingCSVParser } from "./streaming-csv-parser";
 import { advancedCSVProcessor } from "./csv-processor";
 import { authenticateUser, requireAuth, initializeDefaultUser } from "./auth";
+import { linkedinEnrichmentService } from "./linkedin-enrichment";
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -882,6 +883,218 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false, 
         message: "Failed to fix full names" 
       });
+    }
+  });
+
+  // ============ LinkedIn Enrichment Routes ============
+
+  // Check if LinkedIn enrichment is configured
+  app.get("/api/enrichment/status", requireAuth, async (req, res) => {
+    try {
+      const isConfigured = linkedinEnrichmentService.isConfigured();
+      res.json({
+        configured: isConfigured,
+        provider: "proxycurl",
+        message: isConfigured 
+          ? "LinkedIn enrichment is ready to use" 
+          : "Please add PROXYCURL_API_KEY to your secrets to enable LinkedIn enrichment"
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check enrichment status" });
+    }
+  });
+
+  // Search contact details by LinkedIn URL (standalone search)
+  app.post("/api/enrichment/search", requireAuth, async (req, res) => {
+    try {
+      const { linkedinUrl } = linkedinEnrichmentRequestSchema.parse(req.body);
+      
+      if (!linkedinEnrichmentService.isConfigured()) {
+        return res.status(400).json({
+          success: false,
+          message: "LinkedIn enrichment not configured. Please add PROXYCURL_API_KEY to your secrets."
+        });
+      }
+
+      console.log(`🔍 Searching LinkedIn: ${linkedinUrl}`);
+      const result = await linkedinEnrichmentService.searchByLinkedIn(linkedinUrl);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          data: result.data,
+          creditsUsed: result.creditsUsed,
+          message: "Contact details found successfully"
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error,
+          creditsUsed: result.creditsUsed
+        });
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Invalid LinkedIn URL", 
+          errors: error.errors 
+        });
+      }
+      console.error('LinkedIn search error:', error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to search LinkedIn profile" 
+      });
+    }
+  });
+
+  // Enrich existing contact by LinkedIn URL
+  app.post("/api/contacts/:id/enrich-linkedin", requireAuth, async (req, res) => {
+    try {
+      const contactId = req.params.id;
+      let linkedinUrl = req.body.linkedinUrl;
+      
+      // If no LinkedIn URL provided, try to get it from the contact
+      if (!linkedinUrl) {
+        const contact = await storage.getContact(contactId);
+        if (!contact) {
+          return res.status(404).json({ success: false, message: "Contact not found" });
+        }
+        linkedinUrl = contact.personLinkedIn;
+        if (!linkedinUrl) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Contact has no LinkedIn URL. Please provide one." 
+          });
+        }
+      }
+
+      if (!linkedinEnrichmentService.isConfigured()) {
+        return res.status(400).json({
+          success: false,
+          message: "LinkedIn enrichment not configured. Please add PROXYCURL_API_KEY to your secrets."
+        });
+      }
+
+      console.log(`🔍 Enriching contact ${contactId} from LinkedIn: ${linkedinUrl}`);
+      const result = await linkedinEnrichmentService.enrichFromLinkedIn(linkedinUrl, contactId);
+      
+      if (result.success) {
+        // Get the updated contact
+        const updatedContact = await storage.getContact(contactId);
+        res.json({
+          success: true,
+          data: result.data,
+          contact: updatedContact,
+          creditsUsed: result.creditsUsed,
+          message: "Contact enriched successfully"
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error,
+          creditsUsed: result.creditsUsed
+        });
+      }
+    } catch (error) {
+      console.error('LinkedIn enrichment error:', error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to enrich contact from LinkedIn" 
+      });
+    }
+  });
+
+  // Create new contact from LinkedIn search
+  app.post("/api/enrichment/create-contact", requireAuth, async (req, res) => {
+    try {
+      const { linkedinUrl } = linkedinEnrichmentRequestSchema.parse(req.body);
+      
+      if (!linkedinEnrichmentService.isConfigured()) {
+        return res.status(400).json({
+          success: false,
+          message: "LinkedIn enrichment not configured. Please add PROXYCURL_API_KEY to your secrets."
+        });
+      }
+
+      console.log(`🔍 Creating contact from LinkedIn: ${linkedinUrl}`);
+      const result = await linkedinEnrichmentService.searchByLinkedIn(linkedinUrl);
+      
+      if (!result.success || !result.data) {
+        return res.status(400).json({
+          success: false,
+          error: result.error || "Could not retrieve contact data from LinkedIn"
+        });
+      }
+
+      // Create a new contact with the enriched data
+      const contactData = {
+        fullName: result.data.fullName || [result.data.firstName, result.data.lastName].filter(Boolean).join(" ") || "Unknown",
+        firstName: result.data.firstName || null,
+        lastName: result.data.lastName || null,
+        email: result.data.email || null,
+        mobilePhone: result.data.phone || null,
+        title: result.data.title || null,
+        company: result.data.company || null,
+        companyLinkedIn: result.data.companyLinkedIn || null,
+        personLinkedIn: linkedinUrl,
+        city: result.data.city || null,
+        state: result.data.state || null,
+        country: result.data.country || null,
+      };
+
+      const contact = await storage.createContactWithAutoFill(contactData);
+      
+      // Log enrichment activity
+      await storage.createContactActivity({
+        contactId: contact.id,
+        activityType: 'enriched',
+        description: 'Contact created from LinkedIn profile enrichment',
+        changes: result.data as any,
+      });
+
+      res.status(201).json({
+        success: true,
+        contact,
+        enrichedData: result.data,
+        creditsUsed: result.creditsUsed,
+        message: "Contact created successfully from LinkedIn profile"
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Invalid LinkedIn URL", 
+          errors: error.errors 
+        });
+      }
+      console.error('Create contact from LinkedIn error:', error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to create contact from LinkedIn" 
+      });
+    }
+  });
+
+  // Get enrichment job history
+  app.get("/api/enrichment/jobs", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const jobs = await storage.getRecentEnrichmentJobs(limit);
+      res.json({ jobs });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch enrichment jobs" });
+    }
+  });
+
+  // Get enrichment jobs for a specific contact
+  app.get("/api/contacts/:id/enrichment-jobs", requireAuth, async (req, res) => {
+    try {
+      const jobs = await storage.getEnrichmentJobsByContact(req.params.id);
+      res.json({ jobs });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch contact enrichment jobs" });
     }
   });
 

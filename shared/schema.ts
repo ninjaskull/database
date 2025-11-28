@@ -101,6 +101,29 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// LinkedIn enrichment jobs table - tracks enrichment requests
+export const enrichmentJobs = pgTable("enrichment_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").references(() => contacts.id),
+  linkedinUrl: text("linkedin_url").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'completed', 'failed'
+  provider: text("provider").notNull().default("proxycurl"), // API provider used
+  
+  // Results from enrichment
+  enrichedEmail: text("enriched_email"),
+  enrichedPhone: text("enriched_phone"),
+  enrichedData: jsonb("enriched_data"), // Full response from API
+  
+  // Error tracking
+  errorMessage: text("error_message"),
+  
+  // Credits/cost tracking
+  creditsUsed: integer("credits_used"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
 // Relations
 export const contactsRelations = relations(contacts, ({ many }) => ({
   activities: many(contactActivities),
@@ -151,6 +174,21 @@ export const insertSessionSchema = createInsertSchema(sessions).omit({
   createdAt: true,
 });
 
+export const insertEnrichmentJobSchema = createInsertSchema(enrichmentJobs).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+
+// LinkedIn enrichment request schema
+export const linkedinEnrichmentRequestSchema = z.object({
+  linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
+    (url) => url.includes('linkedin.com/in/'),
+    "Must be a valid LinkedIn profile URL"
+  ),
+  contactId: z.string().optional(),
+});
+
 // Login schema
 export const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -168,4 +206,7 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Session = typeof sessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
+export type InsertEnrichmentJob = z.infer<typeof insertEnrichmentJobSchema>;
+export type LinkedinEnrichmentRequest = z.infer<typeof linkedinEnrichmentRequestSchema>;
 export type LoginCredentials = z.infer<typeof loginSchema>;

@@ -5,6 +5,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: 'fas fa-tachometer-alt' },
   { name: 'Contacts', href: '/contacts', icon: 'fas fa-users' },
   { name: 'Import Data', href: '/import', icon: 'fas fa-upload' },
+  { name: 'LinkedIn Search', href: '/linkedin-search', icon: 'fab fa-linkedin' },
   { name: 'Analytics', href: '/analytics', icon: 'fas fa-chart-bar' },
   { name: 'Settings', href: '/settings', icon: 'fas fa-cog' },
 ];
