@@ -2,7 +2,11 @@
 
 This is a modern full-stack CRM application for managing contact databases. Built with React on the frontend, Express on the backend, and PostgreSQL with Drizzle ORM for data management. The application features comprehensive contact management with data enrichment capabilities, CSV import functionality, and real-time activity tracking.
 
-## Recent Changes (Aug 14, 2025)
+## Recent Changes (Nov 28, 2025)
+- **Database Provisioned**: PostgreSQL database has been provisioned and configured with environment variables (DATABASE_URL, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGHOST)
+- **LinkedIn API Documentation**: Created comprehensive documentation at `docs/LINKEDIN_API_SEARCH.md` covering all official LinkedIn search APIs, authentication, rate limiting, and alternative approaches
+
+## Previous Changes (Aug 14, 2025)
 - **Fixed CSV Import Duplicate Headers Issue**: Resolved validation error that was rejecting CSV files with duplicate column headers. The system now properly handles Papa Parse's automatic header renaming instead of blocking valid files.
 - **Added Missing TypeScript Types**: Installed @types/papaparse to resolve LSP diagnostics and improve code quality.
 
