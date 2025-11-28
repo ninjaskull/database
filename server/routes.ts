@@ -1226,6 +1226,193 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public API: Create a new contact
+  app.post("/api/public/contacts", validateApiKey, async (req, res) => {
+    try {
+      const contactData = req.body;
+
+      // Validate required fields - at least one identifier must be provided
+      if (!contactData.email && !contactData.firstName && !contactData.lastName && !contactData.fullName) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields",
+          message: "Please provide at least one of: email, firstName, lastName, or fullName",
+        });
+      }
+
+      // Auto-generate fullName from firstName and lastName if not provided
+      if (!contactData.fullName) {
+        if (contactData.firstName || contactData.lastName) {
+          const firstName = contactData.firstName?.trim() || '';
+          const lastName = contactData.lastName?.trim() || '';
+          contactData.fullName = [firstName, lastName].filter(Boolean).join(' ');
+        } else if (contactData.email) {
+          // Use email username as fallback for fullName
+          contactData.fullName = contactData.email.split('@')[0];
+        }
+      }
+
+      // Validate the contact data using the insert schema
+      const validatedData = insertContactSchema.parse(contactData);
+
+      console.log(`📥 [Public API] Creating contact: ${validatedData.fullName || validatedData.email}`);
+
+      // Create the contact
+      const contact = await storage.createContact(validatedData);
+
+      // Log activity
+      await storage.createContactActivity({
+        contactId: contact.id,
+        activityType: "created",
+        description: "Contact created via Public API",
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "Contact created successfully",
+        contact: {
+          id: contact.id,
+          fullName: contact.fullName,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          email: contact.email,
+          title: contact.title,
+          company: contact.company,
+          mobilePhone: contact.mobilePhone,
+          personLinkedIn: contact.personLinkedIn,
+          city: contact.city,
+          state: contact.state,
+          country: contact.country,
+          industry: contact.industry,
+          createdAt: contact.createdAt,
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error("[Public API] Contact validation error:", error.errors);
+        return res.status(400).json({
+          success: false,
+          error: "Validation error",
+          message: "Invalid contact data provided",
+          details: error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
+        });
+      }
+      console.error("[Public API] Create contact error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
+        message: "Failed to create contact",
+      });
+    }
+  });
+
+  // Public API: Create multiple contacts in bulk
+  app.post("/api/public/contacts/bulk", validateApiKey, async (req, res) => {
+    try {
+      const { contacts } = req.body;
+
+      if (!Array.isArray(contacts) || contacts.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid request body",
+          message: "Please provide an array of contacts in the 'contacts' field",
+        });
+      }
+
+      if (contacts.length > 100) {
+        return res.status(400).json({
+          success: false,
+          error: "Too many contacts",
+          message: "Maximum 100 contacts can be created in a single request",
+        });
+      }
+
+      console.log(`📥 [Public API] Bulk creating ${contacts.length} contacts`);
+
+      const results: { success: boolean; contact?: any; error?: string; index: number }[] = [];
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < contacts.length; i++) {
+        const contactData = contacts[i];
+        
+        try {
+          // Auto-generate fullName from firstName and lastName if not provided
+          if (!contactData.fullName) {
+            if (contactData.firstName || contactData.lastName) {
+              const firstName = contactData.firstName?.trim() || '';
+              const lastName = contactData.lastName?.trim() || '';
+              contactData.fullName = [firstName, lastName].filter(Boolean).join(' ');
+            } else if (contactData.email) {
+              // Use email username as fallback for fullName
+              contactData.fullName = contactData.email.split('@')[0];
+            }
+          }
+
+          // Validate the contact data
+          const validatedData = insertContactSchema.parse(contactData);
+
+          // Create the contact
+          const contact = await storage.createContact(validatedData);
+
+          // Log activity
+          await storage.createContactActivity({
+            contactId: contact.id,
+            activityType: "created",
+            description: "Contact created via Public API (bulk)",
+          });
+
+          results.push({
+            success: true,
+            index: i,
+            contact: {
+              id: contact.id,
+              fullName: contact.fullName,
+              email: contact.email,
+            },
+          });
+          successCount++;
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            results.push({
+              success: false,
+              index: i,
+              error: `Validation error: ${error.errors.map(e => e.message).join(', ')}`,
+            });
+          } else {
+            results.push({
+              success: false,
+              index: i,
+              error: "Failed to create contact",
+            });
+          }
+          errorCount++;
+        }
+      }
+
+      res.status(successCount > 0 ? 201 : 400).json({
+        success: successCount > 0,
+        message: `Created ${successCount} contacts, ${errorCount} failed`,
+        summary: {
+          total: contacts.length,
+          created: successCount,
+          failed: errorCount,
+        },
+        results,
+      });
+    } catch (error) {
+      console.error("[Public API] Bulk create contacts error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
+        message: "Failed to create contacts",
+      });
+    }
+  });
+
   // ==========================================
   // API KEY MANAGEMENT ENDPOINTS
   // ==========================================

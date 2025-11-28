@@ -1190,14 +1190,69 @@ export default function SettingsPage() {
                     {/* API Documentation */}
                     <div className="space-y-4">
                       <h3 className="text-lg font-medium">API Usage</h3>
+                      
+                      {/* Search Prospects */}
+                      <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg space-y-3">
+                        <div>
+                          <p className="text-sm font-medium mb-1">Search Prospects by LinkedIn URL:</p>
+                          <code className="text-sm block text-blue-600 dark:text-blue-400">
+                            GET /api/public/prospects?linkedinUrl=https://linkedin.com/in/username
+                          </code>
+                        </div>
+                      </div>
+
+                      {/* Create Contact */}
+                      <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg space-y-3">
+                        <div>
+                          <p className="text-sm font-medium mb-1">Create a New Contact:</p>
+                          <code className="text-sm block text-green-600 dark:text-green-400">
+                            POST /api/public/contacts
+                          </code>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium mb-1">Request Body (JSON):</p>
+                          <pre className="text-xs bg-white dark:bg-gray-900 p-2 rounded overflow-x-auto">
+{`{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john@example.com",
+  "company": "Acme Inc",
+  "title": "CEO",
+  "industry": "Technology"
+}`}
+                          </pre>
+                        </div>
+                      </div>
+
+                      {/* Bulk Create Contacts */}
+                      <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg space-y-3">
+                        <div>
+                          <p className="text-sm font-medium mb-1">Create Multiple Contacts (max 100):</p>
+                          <code className="text-sm block text-green-600 dark:text-green-400">
+                            POST /api/public/contacts/bulk
+                          </code>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium mb-1">Request Body (JSON):</p>
+                          <pre className="text-xs bg-white dark:bg-gray-900 p-2 rounded overflow-x-auto">
+{`{
+  "contacts": [
+    { "firstName": "John", "email": "john@example.com" },
+    { "firstName": "Jane", "email": "jane@example.com" }
+  ]
+}`}
+                          </pre>
+                        </div>
+                      </div>
+
+                      {/* Headers */}
                       <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
-                        <p className="text-sm font-medium mb-2">Endpoint:</p>
-                        <code className="text-sm block mb-4">
-                          GET /api/public/prospects?linkedinUrl=https://linkedin.com/in/username
-                        </code>
-                        <p className="text-sm font-medium mb-2">Headers:</p>
+                        <p className="text-sm font-medium mb-2">Required Headers:</p>
                         <code className="text-sm block">
                           x-api-key: your-api-key-here
+                        </code>
+                        <code className="text-sm block mt-1">
+                          Content-Type: application/json
                         </code>
                       </div>
                     </div>
