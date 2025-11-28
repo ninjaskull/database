@@ -5,6 +5,9 @@ This is a modern full-stack CRM application for managing contact databases. Buil
 ## Recent Changes (Nov 28, 2025)
 - **Database Provisioned**: PostgreSQL database has been provisioned and configured with environment variables (DATABASE_URL, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGHOST)
 - **LinkedIn API Documentation**: Created comprehensive documentation at `docs/LINKEDIN_API_SEARCH.md` covering all official LinkedIn search APIs, authentication, rate limiting, and alternative approaches
+- **Public API for External Integrations**: Added public API endpoints (`POST /api/public/contacts` and `POST /api/public/contacts/bulk`) that allow external applications to programmatically create contacts using API key authentication
+- **API Key Management**: Full API key lifecycle management in Settings page with secure key generation, visibility, and usage tracking
+- **Automatic Full Name Defaulting**: Public API endpoints auto-generate fullName from firstName/lastName or email username as fallback to ensure database consistency
 
 ## Previous Changes (Aug 14, 2025)
 - **Fixed CSV Import Duplicate Headers Issue**: Resolved validation error that was rejecting CSV files with duplicate column headers. The system now properly handles Papa Parse's automatic header renaming instead of blocking valid files.
