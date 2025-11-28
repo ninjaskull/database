@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,11 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
+import type { Contact } from "@shared/schema";
 import { 
   Search, 
   Linkedin, 
@@ -24,58 +23,31 @@ import {
   MapPin, 
   User, 
   Briefcase, 
-  UserPlus, 
-  AlertCircle,
   CheckCircle,
   Loader2,
   ExternalLink,
-  Settings,
-  History,
-  Coins
+  AlertCircle,
+  Users
 } from "lucide-react";
 
 const searchFormSchema = z.object({
   linkedinUrl: z.string()
-    .url("Please enter a valid URL")
+    .min(1, "Please enter a LinkedIn URL")
     .refine(url => url.includes('linkedin.com/in/'), "Must be a LinkedIn profile URL (e.g., linkedin.com/in/username)")
 });
 
 type SearchFormValues = z.infer<typeof searchFormSchema>;
 
-interface EnrichmentResult {
-  email?: string;
-  workEmail?: string;
-  personalEmail?: string;
-  phone?: string;
-  firstName?: string;
-  lastName?: string;
-  fullName?: string;
-  title?: string;
-  company?: string;
-  companyLinkedIn?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-  headline?: string;
-  skills?: string[];
-  profilePicUrl?: string;
-}
-
-interface EnrichmentJob {
-  id: string;
-  linkedinUrl: string;
-  status: string;
-  provider: string;
-  enrichedEmail: string | null;
-  enrichedPhone: string | null;
-  creditsUsed: number | null;
-  createdAt: string;
-  completedAt: string | null;
+interface SearchResponse {
+  success: boolean;
+  contacts: Contact[];
+  count: number;
+  message: string;
 }
 
 export default function LinkedInSearch() {
   const { toast } = useToast();
-  const [searchResult, setSearchResult] = useState<EnrichmentResult | null>(null);
+  const [searchResults, setSearchResults] = useState<Contact[] | null>(null);
   const [searchedUrl, setSearchedUrl] = useState<string>("");
 
   const form = useForm<SearchFormValues>({
@@ -85,37 +57,27 @@ export default function LinkedInSearch() {
     }
   });
 
-  const { data: statusData, isLoading: statusLoading } = useQuery<{
-    configured: boolean;
-    provider: string;
-    message: string;
-  }>({
-    queryKey: ["/api/enrichment/status"]
-  });
-
-  const { data: jobsData } = useQuery<{ jobs: EnrichmentJob[] }>({
-    queryKey: ["/api/enrichment/jobs"]
-  });
-
   const searchMutation = useMutation({
     mutationFn: async (data: SearchFormValues) => {
-      return apiRequest("/api/enrichment/search", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      const response = await fetch(`/api/contacts/linkedin-search?url=${encodeURIComponent(data.linkedinUrl)}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Search failed");
+      }
+      return response.json() as Promise<SearchResponse>;
     },
     onSuccess: (result) => {
-      if (result.success) {
-        setSearchResult(result.data);
+      setSearchResults(result.contacts);
+      if (result.contacts.length > 0) {
         toast({
-          title: "Contact Found",
-          description: `Found contact details. Credits used: ${result.creditsUsed || 0}`,
+          title: "Contacts Found",
+          description: result.message,
         });
       } else {
         toast({
           variant: "destructive",
-          title: "Search Failed",
-          description: result.error || "Could not find contact details",
+          title: "No Results",
+          description: "No contacts found with this LinkedIn URL in your database",
         });
       }
     },
@@ -128,54 +90,11 @@ export default function LinkedInSearch() {
     }
   });
 
-  const createContactMutation = useMutation({
-    mutationFn: async (linkedinUrl: string) => {
-      return apiRequest("/api/enrichment/create-contact", {
-        method: "POST",
-        body: JSON.stringify({ linkedinUrl }),
-      });
-    },
-    onSuccess: (result) => {
-      if (result.success) {
-        queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/enrichment/jobs"] });
-        toast({
-          title: "Contact Created",
-          description: `${result.contact.fullName} has been added to your contacts.`,
-        });
-        setSearchResult(null);
-        form.reset();
-        setSearchedUrl("");
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Creation Failed",
-          description: result.error || "Could not create contact",
-        });
-      }
-    },
-    onError: (error: Error) => {
-      toast({
-        variant: "destructive",
-        title: "Creation Error",
-        description: error.message,
-      });
-    }
-  });
-
   const onSubmit = (data: SearchFormValues) => {
     setSearchedUrl(data.linkedinUrl);
-    setSearchResult(null);
+    setSearchResults(null);
     searchMutation.mutate(data);
   };
-
-  const handleCreateContact = () => {
-    if (searchedUrl) {
-      createContactMutation.mutate(searchedUrl);
-    }
-  };
-
-  const isConfigured = statusData?.configured;
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -193,42 +112,18 @@ export default function LinkedInSearch() {
                   LinkedIn Contact Search
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Find email addresses and phone numbers from LinkedIn profiles
+                  Search your existing contacts by their LinkedIn profile URL
                 </p>
               </div>
             </div>
 
-            {statusLoading ? (
-              <Card>
-                <CardContent className="p-6">
-                  <Skeleton className="h-4 w-48" />
-                </CardContent>
-              </Card>
-            ) : !isConfigured ? (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>API Key Required</AlertTitle>
-                <AlertDescription className="space-y-2">
-                  <p>LinkedIn enrichment requires a Proxycurl API key to function.</p>
-                  <p className="text-sm">
-                    To enable this feature:
-                    <ol className="list-decimal list-inside mt-2 space-y-1">
-                      <li>Sign up at <a href="https://nubela.co/proxycurl" target="_blank" rel="noopener noreferrer" className="underline">Proxycurl</a></li>
-                      <li>Get your API key from your dashboard</li>
-                      <li>Add it to your secrets as <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">PROXYCURL_API_KEY</code></li>
-                    </ol>
-                  </p>
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <Alert className="border-green-200 bg-green-50 dark:bg-green-900/20">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <AlertTitle className="text-green-800 dark:text-green-200">Ready to Search</AlertTitle>
-                <AlertDescription className="text-green-700 dark:text-green-300">
-                  LinkedIn enrichment is configured and ready to use.
-                </AlertDescription>
-              </Alert>
-            )}
+            <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-900/20">
+              <Users className="h-4 w-4 text-blue-600" />
+              <AlertTitle className="text-blue-800 dark:text-blue-200">Database Search</AlertTitle>
+              <AlertDescription className="text-blue-700 dark:text-blue-300">
+                This searches your existing contacts database. Enter a LinkedIn profile URL to find matching contacts.
+              </AlertDescription>
+            </Alert>
 
             <Card>
               <CardHeader>
@@ -237,7 +132,7 @@ export default function LinkedInSearch() {
                   Search by LinkedIn Profile
                 </CardTitle>
                 <CardDescription>
-                  Enter a LinkedIn profile URL to find contact details like email and phone number
+                  Enter a LinkedIn profile URL to find contacts in your database with matching profiles
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -254,12 +149,12 @@ export default function LinkedInSearch() {
                               <Input 
                                 placeholder="https://linkedin.com/in/username" 
                                 {...field}
-                                disabled={!isConfigured || searchMutation.isPending}
+                                disabled={searchMutation.isPending}
                                 data-testid="input-linkedin-url"
                               />
                               <Button 
                                 type="submit" 
-                                disabled={!isConfigured || searchMutation.isPending}
+                                disabled={searchMutation.isPending}
                                 data-testid="button-search-linkedin"
                               >
                                 {searchMutation.isPending ? (
@@ -277,7 +172,7 @@ export default function LinkedInSearch() {
                             </div>
                           </FormControl>
                           <FormDescription>
-                            Paste the full LinkedIn profile URL of the person you want to find
+                            Paste the LinkedIn profile URL of the person you want to find in your contacts
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -288,245 +183,146 @@ export default function LinkedInSearch() {
               </CardContent>
             </Card>
 
-            {searchResult && (
-              <Card className="border-blue-200 dark:border-blue-800">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <CheckCircle className="h-5 w-5 text-green-500" />
-                      Contact Details Found
-                    </CardTitle>
-                    <CardDescription>
-                      Review the information and add to your contacts
-                    </CardDescription>
-                  </div>
-                  <Button 
-                    onClick={handleCreateContact}
-                    disabled={createContactMutation.isPending}
-                    data-testid="button-create-contact"
-                  >
-                    {createContactMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Add to Contacts
-                      </>
-                    )}
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <User className="h-5 w-5 text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm text-gray-500">Full Name</p>
-                          <p className="font-medium" data-testid="text-result-name">
-                            {searchResult.fullName || `${searchResult.firstName || ''} ${searchResult.lastName || ''}`.trim() || 'Not found'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <Briefcase className="h-5 w-5 text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm text-gray-500">Title</p>
-                          <p className="font-medium" data-testid="text-result-title">
-                            {searchResult.title || searchResult.headline || 'Not found'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <Building2 className="h-5 w-5 text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm text-gray-500">Company</p>
-                          <p className="font-medium" data-testid="text-result-company">
-                            {searchResult.company || 'Not found'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <MapPin className="h-5 w-5 text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm text-gray-500">Location</p>
-                          <p className="font-medium" data-testid="text-result-location">
-                            {[searchResult.city, searchResult.state, searchResult.country].filter(Boolean).join(', ') || 'Not found'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <Mail className="h-5 w-5 text-blue-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm text-gray-500">Email</p>
-                          <div className="space-y-1">
-                            {searchResult.workEmail && (
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-xs">Work</Badge>
-                                <p className="font-medium text-blue-600" data-testid="text-result-work-email">
-                                  {searchResult.workEmail}
-                                </p>
-                              </div>
-                            )}
-                            {searchResult.personalEmail && (
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-xs">Personal</Badge>
-                                <p className="font-medium text-blue-600" data-testid="text-result-personal-email">
-                                  {searchResult.personalEmail}
-                                </p>
-                              </div>
-                            )}
-                            {!searchResult.workEmail && !searchResult.personalEmail && searchResult.email && (
-                              <p className="font-medium text-blue-600" data-testid="text-result-email">
-                                {searchResult.email}
-                              </p>
-                            )}
-                            {!searchResult.workEmail && !searchResult.personalEmail && !searchResult.email && (
-                              <p className="text-gray-400">Not found</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3">
-                        <Phone className="h-5 w-5 text-green-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm text-gray-500">Phone</p>
-                          <p className={`font-medium ${searchResult.phone ? 'text-green-600' : 'text-gray-400'}`} data-testid="text-result-phone">
-                            {searchResult.phone || 'Not found'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {searchResult.companyLinkedIn && (
-                        <div className="flex items-start gap-3">
-                          <Linkedin className="h-5 w-5 text-blue-500 mt-0.5" />
-                          <div>
-                            <p className="text-sm text-gray-500">Company LinkedIn</p>
-                            <a 
-                              href={searchResult.companyLinkedIn} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="font-medium text-blue-600 hover:underline flex items-center gap-1"
-                            >
-                              View Profile <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                        </div>
-                      )}
-
-                      {searchResult.skills && searchResult.skills.length > 0 && (
-                        <div className="flex items-start gap-3">
-                          <Settings className="h-5 w-5 text-gray-500 mt-0.5" />
-                          <div>
-                            <p className="text-sm text-gray-500">Skills</p>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {searchResult.skills.slice(0, 5).map((skill, i) => (
-                                <Badge key={i} variant="secondary" className="text-xs">
-                                  {skill}
-                                </Badge>
-                              ))}
-                              {searchResult.skills.length > 5 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{searchResult.skills.length - 5} more
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            {searchResults !== null && searchResults.length === 0 && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>No Contacts Found</AlertTitle>
+                <AlertDescription>
+                  No contacts in your database have this LinkedIn profile URL: <strong>{searchedUrl}</strong>
+                </AlertDescription>
+              </Alert>
             )}
 
-            {jobsData?.jobs && jobsData.jobs.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <History className="h-5 w-5" />
-                    Recent Searches
-                  </CardTitle>
-                  <CardDescription>
-                    Your recent LinkedIn enrichment requests
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {jobsData.jobs.slice(0, 5).map((job) => (
-                      <div 
-                        key={job.id} 
-                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Linkedin className="h-4 w-4 text-blue-500" />
-                          <div>
-                            <p className="text-sm font-medium truncate max-w-xs">
-                              {job.linkedinUrl.replace('https://linkedin.com/in/', '').replace('https://www.linkedin.com/in/', '')}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {new Date(job.createdAt).toLocaleDateString()} at {new Date(job.createdAt).toLocaleTimeString()}
-                            </p>
-                          </div>
+            {searchResults && searchResults.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                  <h2 className="text-lg font-semibold">
+                    Found {searchResults.length} Contact{searchResults.length > 1 ? 's' : ''}
+                  </h2>
+                </div>
+                
+                {searchResults.map((contact) => (
+                  <Card key={contact.id} className="border-green-200 dark:border-green-800">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            <User className="h-5 w-5 text-gray-500" />
+                            {contact.fullName}
+                          </CardTitle>
+                          {contact.title && (
+                            <CardDescription className="flex items-center gap-1 mt-1">
+                              <Briefcase className="h-4 w-4" />
+                              {contact.title}
+                            </CardDescription>
+                          )}
                         </div>
-                        <div className="flex items-center gap-3">
-                          {job.enrichedEmail && (
-                            <Badge variant="outline" className="text-xs">
-                              <Mail className="h-3 w-3 mr-1" />
-                              Email
-                            </Badge>
+                        <a 
+                          href={`/contacts/${contact.id}`}
+                          className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                          data-testid={`link-view-contact-${contact.id}`}
+                        >
+                          View Full Profile <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-3">
+                          {contact.company && (
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-gray-500" />
+                              <span className="text-sm" data-testid={`text-company-${contact.id}`}>{contact.company}</span>
+                              {contact.industry && (
+                                <Badge variant="secondary" className="text-xs">{contact.industry}</Badge>
+                              )}
+                            </div>
                           )}
-                          {job.enrichedPhone && (
-                            <Badge variant="outline" className="text-xs">
-                              <Phone className="h-3 w-3 mr-1" />
-                              Phone
-                            </Badge>
+                          
+                          {(contact.city || contact.state || contact.country) && (
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-4 w-4 text-gray-500" />
+                              <span className="text-sm" data-testid={`text-location-${contact.id}`}>
+                                {[contact.city, contact.state, contact.country].filter(Boolean).join(', ')}
+                              </span>
+                            </div>
                           )}
-                          <Badge 
-                            variant={job.status === 'completed' ? 'default' : job.status === 'failed' ? 'destructive' : 'secondary'}
-                          >
-                            {job.status}
-                          </Badge>
-                          {job.creditsUsed && (
-                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                              <Coins className="h-3 w-3" />
-                              {job.creditsUsed}
-                            </span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {contact.email && (
+                            <div className="flex items-center gap-2">
+                              <Mail className="h-4 w-4 text-blue-500" />
+                              <a 
+                                href={`mailto:${contact.email}`} 
+                                className="text-sm text-blue-600 hover:underline"
+                                data-testid={`link-email-${contact.id}`}
+                              >
+                                {contact.email}
+                              </a>
+                            </div>
+                          )}
+                          
+                          {(contact.mobilePhone || contact.corporatePhone) && (
+                            <div className="flex items-center gap-2">
+                              <Phone className="h-4 w-4 text-green-500" />
+                              <span className="text-sm" data-testid={`text-phone-${contact.id}`}>
+                                {contact.mobilePhone || contact.corporatePhone}
+                              </span>
+                            </div>
+                          )}
+
+                          {contact.personLinkedIn && (
+                            <div className="flex items-center gap-2">
+                              <Linkedin className="h-4 w-4 text-blue-500" />
+                              <a 
+                                href={contact.personLinkedIn} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                                data-testid={`link-linkedin-${contact.id}`}
+                              >
+                                LinkedIn Profile <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
                           )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+
+                      {contact.leadScore && (
+                        <div className="mt-4 pt-3 border-t">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-500">Lead Score:</span>
+                            <Badge 
+                              variant={Number(contact.leadScore) >= 7 ? "default" : Number(contact.leadScore) >= 4 ? "secondary" : "outline"}
+                            >
+                              {contact.leadScore}/10
+                            </Badge>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             )}
 
             <Card>
               <CardHeader>
-                <CardTitle>About LinkedIn Enrichment</CardTitle>
+                <CardTitle>How It Works</CardTitle>
               </CardHeader>
               <CardContent className="prose dark:prose-invert max-w-none">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  This feature uses the Proxycurl API to find contact information from LinkedIn profiles. 
-                  Each search uses credits from your Proxycurl account:
+                  This feature searches your existing contacts database by LinkedIn profile URL:
                 </p>
                 <ul className="text-sm text-gray-600 dark:text-gray-400 mt-2 space-y-1">
-                  <li><strong>Profile data:</strong> 1 credit</li>
-                  <li><strong>Work email:</strong> 3 credits</li>
-                  <li><strong>Personal email:</strong> 2 credits</li>
-                  <li><strong>Phone number:</strong> 1 credit</li>
+                  <li><strong>Paste URL:</strong> Enter any LinkedIn profile URL (e.g., linkedin.com/in/johndoe)</li>
+                  <li><strong>Database Search:</strong> Finds all contacts with matching LinkedIn profiles</li>
+                  <li><strong>View Details:</strong> See contact info like email, phone, company, and location</li>
                 </ul>
                 <p className="text-sm text-gray-500 mt-3">
-                  A typical search uses 5-7 credits depending on data availability.
+                  This does not call any external APIs - it simply searches your stored contacts.
                 </p>
               </CardContent>
             </Card>
