@@ -1077,6 +1077,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Search contacts by LinkedIn URL in existing database
+  app.get("/api/contacts/linkedin-search", async (req, res) => {
+    try {
+      const linkedinUrl = req.query.url as string;
+      
+      if (!linkedinUrl) {
+        return res.status(400).json({ 
+          success: false,
+          message: "LinkedIn URL is required" 
+        });
+      }
+      
+      // Validate that it looks like a LinkedIn URL
+      if (!linkedinUrl.includes('linkedin.com/in/')) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Invalid LinkedIn URL format. Use format: linkedin.com/in/username" 
+        });
+      }
+      
+      console.log(`🔍 Searching contacts by LinkedIn URL: ${linkedinUrl}`);
+      const contacts = await storage.findContactsByLinkedInUrl(linkedinUrl);
+      
+      res.json({ 
+        success: true,
+        contacts,
+        count: contacts.length,
+        message: contacts.length > 0 
+          ? `Found ${contacts.length} matching contact(s)` 
+          : "No contacts found with this LinkedIn URL"
+      });
+    } catch (error) {
+      console.error('LinkedIn search error:', error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to search contacts by LinkedIn URL" 
+      });
+    }
+  });
+
   // Get enrichment job history
   app.get("/api/enrichment/jobs", requireAuth, async (req, res) => {
     try {
