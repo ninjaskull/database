@@ -9,6 +9,7 @@ import {
   tags,
   contactTags,
   apiRequestLogs,
+  companies,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -28,13 +29,38 @@ import {
   type ContactTag,
   type InsertContactTag,
   type ApiRequestLog,
-  type InsertApiRequestLog
+  type InsertApiRequestLog,
+  type Company,
+  type InsertCompany,
+  type InsertProspect
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
 import { CompanyMatcher } from "./company-matcher";
 
 export interface IStorage {
+  // Company operations
+  getCompanies(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    industry?: string;
+  }): Promise<{ companies: Company[], total: number }>;
+  getCompany(id: string): Promise<Company | undefined>;
+  getCompanyByDomain(domain: string): Promise<Company | undefined>;
+  getCompanyByName(name: string): Promise<Company | undefined>;
+  createCompany(company: InsertCompany): Promise<Company>;
+  updateCompany(id: string, updates: Partial<InsertCompany>): Promise<Company | undefined>;
+  deleteCompany(id: string): Promise<boolean>;
+  bulkImportCompanies(companies: InsertCompany[]): Promise<{ imported: number; duplicates: number }>;
+  
+  // Prospect operations with company matching
+  createProspect(prospect: InsertProspect): Promise<Contact>;
+  matchProspectToCompany(contactId: string): Promise<{ matched: boolean; companyId?: string; companyName?: string }>;
+  bulkMatchProspectsToCompanies(): Promise<{ matched: number; unmatched: number }>;
+  getUnmatchedProspects(): Promise<Contact[]>;
+  manuallyAssignCompany(contactId: string, companyId: string): Promise<Contact | undefined>;
+  
   // Contact operations
   getContacts(params: {
     page?: number;
@@ -45,6 +71,7 @@ export interface IStorage {
     country?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    companyMatchStatus?: string;
   }): Promise<{ contacts: Contact[], total: number }>;
   getContact(id: string): Promise<Contact | undefined>;
   createContact(contact: InsertContact): Promise<Contact>;
@@ -158,7 +185,397 @@ function generateFullName(firstName?: string | null, lastName?: string | null, e
   return existingFullName || '';
 }
 
+// Helper function to extract domain from email
+function extractDomainFromEmail(email: string): string | null {
+  if (!email) return null;
+  const parts = email.toLowerCase().split('@');
+  return parts.length === 2 ? parts[1] : null;
+}
+
 export class DatabaseStorage implements IStorage {
+  // ============ COMPANY OPERATIONS ============
+  
+  async getCompanies(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    industry?: string;
+  } = {}): Promise<{ companies: Company[], total: number }> {
+    const { page = 1, limit = 20, search = '', industry = '' } = params;
+    const offset = (page - 1) * limit;
+    
+    const conditions = [eq(companies.isDeleted, false)];
+    
+    if (search) {
+      conditions.push(
+        sql`(${companies.name} ILIKE ${`%${search}%`} OR 
+            ${companies.website} ILIKE ${`%${search}%`} OR
+            ${search} = ANY(${companies.domains}))`
+      );
+    }
+    
+    if (industry) {
+      conditions.push(eq(companies.industry, industry));
+    }
+    
+    const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
+    
+    const [{ count: total }] = await db
+      .select({ count: count() })
+      .from(companies)
+      .where(whereClause);
+    
+    const companiesList = await db
+      .select()
+      .from(companies)
+      .where(whereClause)
+      .orderBy(desc(companies.createdAt))
+      .limit(limit)
+      .offset(offset);
+    
+    return { companies: companiesList, total };
+  }
+  
+  async getCompany(id: string): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.id, id), eq(companies.isDeleted, false)));
+    return company || undefined;
+  }
+  
+  async getCompanyByDomain(domain: string): Promise<Company | undefined> {
+    const normalizedDomain = domain.toLowerCase().trim();
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(
+        sql`${normalizedDomain} = ANY(${companies.domains})`,
+        eq(companies.isDeleted, false)
+      ));
+    return company || undefined;
+  }
+  
+  async getCompanyByName(name: string): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(
+        ilike(companies.name, name.trim()),
+        eq(companies.isDeleted, false)
+      ));
+    return company || undefined;
+  }
+  
+  async createCompany(insertCompany: InsertCompany): Promise<Company> {
+    // Normalize domains if provided
+    const companyData = {
+      ...insertCompany,
+      domains: insertCompany.domains?.map(d => d.toLowerCase().trim()) || [],
+      updatedAt: new Date(),
+    };
+    
+    const [company] = await db
+      .insert(companies)
+      .values(companyData)
+      .returning();
+    
+    return company;
+  }
+  
+  async updateCompany(id: string, updates: Partial<InsertCompany>): Promise<Company | undefined> {
+    // Normalize domains if provided
+    const updateData = { ...updates };
+    if (updates.domains) {
+      updateData.domains = updates.domains.map(d => d.toLowerCase().trim());
+    }
+    
+    const [company] = await db
+      .update(companies)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(companies.id, id), eq(companies.isDeleted, false)))
+      .returning();
+    
+    return company || undefined;
+  }
+  
+  async deleteCompany(id: string): Promise<boolean> {
+    const [company] = await db
+      .update(companies)
+      .set({ isDeleted: true, updatedAt: new Date() })
+      .where(and(eq(companies.id, id), eq(companies.isDeleted, false)))
+      .returning();
+    
+    return !!company;
+  }
+  
+  async bulkImportCompanies(companyList: InsertCompany[]): Promise<{ imported: number; duplicates: number }> {
+    let imported = 0;
+    let duplicates = 0;
+    
+    for (const company of companyList) {
+      // Check for duplicates by domain or name
+      let existing: Company | undefined;
+      
+      if (company.domains && company.domains.length > 0) {
+        for (const domain of company.domains) {
+          existing = await this.getCompanyByDomain(domain);
+          if (existing) break;
+        }
+      }
+      
+      if (!existing && company.name) {
+        existing = await this.getCompanyByName(company.name);
+      }
+      
+      if (existing) {
+        duplicates++;
+      } else {
+        await this.createCompany(company);
+        imported++;
+      }
+    }
+    
+    return { imported, duplicates };
+  }
+  
+  // ============ PROSPECT OPERATIONS WITH COMPANY MATCHING ============
+  
+  async createProspect(prospect: InsertProspect): Promise<Contact> {
+    // Generate full name from first and last name
+    const fullName = `${prospect.firstName} ${prospect.lastName}`.trim();
+    
+    // Extract domain from email for matching
+    const emailDomain = extractDomainFromEmail(prospect.email);
+    
+    // Try to match to a company
+    let companyId: string | null = null;
+    let companyMatchStatus = 'unmatched';
+    let companyDetails: Partial<Contact> = {};
+    
+    // First try domain matching
+    if (emailDomain) {
+      const matchedCompany = await this.getCompanyByDomain(emailDomain);
+      if (matchedCompany) {
+        companyId = matchedCompany.id;
+        companyMatchStatus = 'matched';
+        // Auto-fill company details from matched company
+        companyDetails = {
+          company: matchedCompany.name,
+          industry: matchedCompany.industry,
+          employees: matchedCompany.employees,
+          employeeSizeBracket: matchedCompany.employeeSizeBracket,
+          website: matchedCompany.website,
+          companyLinkedIn: matchedCompany.linkedinUrl,
+          technologies: matchedCompany.technologies,
+          annualRevenue: matchedCompany.annualRevenue,
+          companyCity: matchedCompany.city,
+          companyState: matchedCompany.state,
+          companyCountry: matchedCompany.country,
+          companyAddress: matchedCompany.address,
+        };
+      }
+    }
+    
+    // If no domain match and company name provided, try name matching
+    if (!companyId && prospect.company) {
+      const matchedCompany = await this.getCompanyByName(prospect.company);
+      if (matchedCompany) {
+        companyId = matchedCompany.id;
+        companyMatchStatus = 'matched';
+        companyDetails = {
+          company: matchedCompany.name,
+          industry: matchedCompany.industry,
+          employees: matchedCompany.employees,
+          employeeSizeBracket: matchedCompany.employeeSizeBracket,
+          website: matchedCompany.website,
+          companyLinkedIn: matchedCompany.linkedinUrl,
+          technologies: matchedCompany.technologies,
+          annualRevenue: matchedCompany.annualRevenue,
+          companyCity: matchedCompany.city,
+          companyState: matchedCompany.state,
+          companyCountry: matchedCompany.country,
+          companyAddress: matchedCompany.address,
+        };
+      } else {
+        // Mark for review since company name was provided but not found
+        companyMatchStatus = 'pending_review';
+      }
+    }
+    
+    // Create the contact with auto-filled company details
+    const contactValues = {
+      fullName,
+      firstName: prospect.firstName,
+      lastName: prospect.lastName,
+      email: prospect.email,
+      mobilePhone: prospect.mobilePhone,
+      personLinkedIn: prospect.personLinkedIn,
+      title: prospect.title,
+      company: prospect.company || companyDetails.company,
+      companyId: companyId || undefined,
+      companyMatchStatus,
+      emailDomain,
+      industry: companyDetails.industry,
+      employees: companyDetails.employees,
+      employeeSizeBracket: companyDetails.employeeSizeBracket,
+      website: companyDetails.website,
+      companyLinkedIn: companyDetails.companyLinkedIn,
+      technologies: companyDetails.technologies,
+      annualRevenue: companyDetails.annualRevenue,
+      companyCity: companyDetails.companyCity,
+      companyState: companyDetails.companyState,
+      companyCountry: companyDetails.companyCountry,
+      companyAddress: companyDetails.companyAddress,
+      updatedAt: new Date(),
+    };
+    
+    const [contact] = await db
+      .insert(contacts)
+      .values(contactValues)
+      .returning();
+    
+    // Log activity
+    await this.createContactActivity({
+      contactId: contact.id,
+      activityType: 'created',
+      description: `Prospect added${companyId ? ' and matched to company' : ''}`,
+    });
+    
+    return contact;
+  }
+  
+  async matchProspectToCompany(contactId: string): Promise<{ matched: boolean; companyId?: string; companyName?: string }> {
+    const contact = await this.getContact(contactId);
+    if (!contact) return { matched: false };
+    
+    // Already matched
+    if (contact.companyId && contact.companyMatchStatus === 'matched') {
+      const company = await this.getCompany(contact.companyId);
+      return { matched: true, companyId: contact.companyId, companyName: company?.name };
+    }
+    
+    // Extract domain from email
+    const emailDomain = contact.email ? extractDomainFromEmail(contact.email) : null;
+    
+    // Try domain matching first
+    if (emailDomain) {
+      const matchedCompany = await this.getCompanyByDomain(emailDomain);
+      if (matchedCompany) {
+        await this.updateContact(contactId, {
+          companyId: matchedCompany.id,
+          companyMatchStatus: 'matched',
+          company: matchedCompany.name,
+          industry: matchedCompany.industry,
+          employees: matchedCompany.employees,
+          employeeSizeBracket: matchedCompany.employeeSizeBracket,
+          website: matchedCompany.website,
+          companyLinkedIn: matchedCompany.linkedinUrl,
+          technologies: matchedCompany.technologies,
+          annualRevenue: matchedCompany.annualRevenue,
+          companyCity: matchedCompany.city,
+          companyState: matchedCompany.state,
+          companyCountry: matchedCompany.country,
+          companyAddress: matchedCompany.address,
+        });
+        return { matched: true, companyId: matchedCompany.id, companyName: matchedCompany.name };
+      }
+    }
+    
+    // Try company name matching
+    if (contact.company) {
+      const matchedCompany = await this.getCompanyByName(contact.company);
+      if (matchedCompany) {
+        await this.updateContact(contactId, {
+          companyId: matchedCompany.id,
+          companyMatchStatus: 'matched',
+          industry: matchedCompany.industry,
+          employees: matchedCompany.employees,
+          employeeSizeBracket: matchedCompany.employeeSizeBracket,
+          website: matchedCompany.website,
+          companyLinkedIn: matchedCompany.linkedinUrl,
+          technologies: matchedCompany.technologies,
+          annualRevenue: matchedCompany.annualRevenue,
+          companyCity: matchedCompany.city,
+          companyState: matchedCompany.state,
+          companyCountry: matchedCompany.country,
+          companyAddress: matchedCompany.address,
+        });
+        return { matched: true, companyId: matchedCompany.id, companyName: matchedCompany.name };
+      }
+    }
+    
+    return { matched: false };
+  }
+  
+  async bulkMatchProspectsToCompanies(): Promise<{ matched: number; unmatched: number }> {
+    let matched = 0;
+    let unmatched = 0;
+    
+    // Get all unmatched contacts
+    const unmatchedContacts = await this.getUnmatchedProspects();
+    
+    for (const contact of unmatchedContacts) {
+      const result = await this.matchProspectToCompany(contact.id);
+      if (result.matched) {
+        matched++;
+      } else {
+        unmatched++;
+      }
+    }
+    
+    return { matched, unmatched };
+  }
+  
+  async getUnmatchedProspects(): Promise<Contact[]> {
+    return await db
+      .select()
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        or(
+          eq(contacts.companyMatchStatus, 'unmatched'),
+          eq(contacts.companyMatchStatus, 'pending_review'),
+          isNull(contacts.companyMatchStatus)
+        )
+      ))
+      .orderBy(desc(contacts.createdAt));
+  }
+  
+  async manuallyAssignCompany(contactId: string, companyId: string): Promise<Contact | undefined> {
+    const company = await this.getCompany(companyId);
+    if (!company) return undefined;
+    
+    const updated = await this.updateContact(contactId, {
+      companyId: company.id,
+      companyMatchStatus: 'manual',
+      company: company.name,
+      industry: company.industry,
+      employees: company.employees,
+      employeeSizeBracket: company.employeeSizeBracket,
+      website: company.website,
+      companyLinkedIn: company.linkedinUrl,
+      technologies: company.technologies,
+      annualRevenue: company.annualRevenue,
+      companyCity: company.city,
+      companyState: company.state,
+      companyCountry: company.country,
+      companyAddress: company.address,
+    });
+    
+    if (updated) {
+      await this.createContactActivity({
+        contactId: contactId,
+        activityType: 'updated',
+        description: `Manually assigned to company: ${company.name}`,
+      });
+    }
+    
+    return updated;
+  }
+
+  // ============ CONTACT OPERATIONS ============
+  
   async getContacts(params: {
     page?: number;
     limit?: number;
@@ -168,6 +585,7 @@ export class DatabaseStorage implements IStorage {
     country?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    companyMatchStatus?: string;
   } = {}): Promise<{ contacts: Contact[], total: number }> {
     const {
       page = 1,
@@ -177,7 +595,8 @@ export class DatabaseStorage implements IStorage {
       employeeSizeBracket = '',
       country = '',
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      companyMatchStatus = ''
     } = params;
     const offset = (page - 1) * limit;
     
@@ -204,6 +623,10 @@ export class DatabaseStorage implements IStorage {
     
     if (country) {
       conditions.push(eq(contacts.country, country));
+    }
+    
+    if (companyMatchStatus) {
+      conditions.push(eq(contacts.companyMatchStatus, companyMatchStatus));
     }
     
     const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];

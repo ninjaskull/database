@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import Contacts from "@/pages/contacts";
+import Companies from "@/pages/companies";
+import Prospects from "@/pages/prospects";
 import ImportPage from "@/pages/import";
 import SettingsPage from "@/pages/settings";
 import Analytics from "@/pages/analytics";
@@ -51,6 +53,8 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/companies" component={Companies} />
+      <Route path="/prospects" component={Prospects} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/import" component={ImportPage} />
       <Route path="/linkedin-search" component={LinkedInSearch} />

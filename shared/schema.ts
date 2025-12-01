@@ -4,10 +4,55 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Companies table - stores verified company information
+export const companies = pgTable("companies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Company Identity
+  name: text("name").notNull(),
+  website: text("website"),
+  linkedinUrl: text("linkedin_url"),
+  
+  // Domains for matching (e.g., ["acme.com", "acme.io"])
+  domains: text("domains").array().default(sql`ARRAY[]::text[]`),
+  
+  // Company Details
+  industry: text("industry"),
+  employees: integer("employees"),
+  employeeSizeBracket: text("employee_size_bracket"),
+  annualRevenue: decimal("annual_revenue"),
+  foundedYear: integer("founded_year"),
+  
+  // Location
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  country: text("country"),
+  
+  // Additional Info
+  description: text("description"),
+  technologies: text("technologies").array(),
+  businessType: text("business_type"),
+  
+  // Data Quality
+  isVerified: boolean("is_verified").default(false),
+  dataQualityScore: integer("data_quality_score").default(0),
+  lastEnrichedAt: timestamp("last_enriched_at"),
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isDeleted: boolean("is_deleted").default(false),
+});
+
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   
-  // Personal Information
+  // Company Reference - links to companies table
+  companyId: varchar("company_id").references(() => companies.id),
+  companyMatchStatus: text("company_match_status").default("unmatched"), // 'matched', 'unmatched', 'pending_review', 'manual'
+  
+  // Personal Information (MANDATORY for prospects)
   fullName: text("full_name").notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -20,7 +65,7 @@ export const contacts = pgTable("contacts", {
   homePhone: text("home_phone"),
   corporatePhone: text("corporate_phone"),
   
-  // Company Information
+  // Legacy Company Information (kept for backwards compatibility, but will be auto-filled from companies table)
   company: text("company"),
   employees: integer("employees"),
   employeeSizeBracket: text("employee_size_bracket"),
@@ -174,7 +219,15 @@ export const apiRequestLogs = pgTable("api_request_logs", {
 });
 
 // Relations
-export const contactsRelations = relations(contacts, ({ many }) => ({
+export const companiesRelations = relations(companies, ({ many }) => ({
+  contacts: many(contacts),
+}));
+
+export const contactsRelations = relations(contacts, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [contacts.companyId],
+    references: [companies.id],
+  }),
   activities: many(contactActivities),
   contactTags: many(contactTags),
 }));
@@ -202,6 +255,12 @@ export const contactActivitiesRelations = relations(contactActivities, ({ one })
 }));
 
 // Insert schemas
+export const insertCompanySchema = createInsertSchema(companies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
   createdAt: true,
@@ -215,6 +274,21 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
 }, {
   message: "Either fullName or firstName/lastName or email must be provided",
   path: ["fullName"]
+});
+
+// Simplified Prospect Schema - only mandatory fields for prospect upload
+export const insertProspectSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  email: z.string().email("Valid email is required"),
+  mobilePhone: z.string().min(1, "Phone number is required"),
+  personLinkedIn: z.string().url("Valid LinkedIn URL is required").refine(
+    (url) => url.includes('linkedin.com/in/'),
+    "Must be a valid LinkedIn profile URL"
+  ),
+  // Optional fields that can help with matching
+  company: z.string().optional(),
+  title: z.string().optional(),
 });
 
 export const insertContactActivitySchema = createInsertSchema(contactActivities).omit({
@@ -285,6 +359,9 @@ export const loginSchema = z.object({
 });
 
 // Types
+export type Company = typeof companies.$inferSelect;
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type InsertProspect = z.infer<typeof insertProspectSchema>;
 export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type ContactActivity = typeof contactActivities.$inferSelect;

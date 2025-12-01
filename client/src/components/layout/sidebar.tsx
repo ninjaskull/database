@@ -3,6 +3,8 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: 'fas fa-tachometer-alt' },
+  { name: 'Companies', href: '/companies', icon: 'fas fa-building' },
+  { name: 'Prospects', href: '/prospects', icon: 'fas fa-user-plus' },
   { name: 'Contacts', href: '/contacts', icon: 'fas fa-users' },
   { name: 'Import Data', href: '/import', icon: 'fas fa-upload' },
   { name: 'LinkedIn Search', href: '/linkedin-search', icon: 'fab fa-linkedin' },

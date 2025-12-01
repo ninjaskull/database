@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
-import { insertContactSchema, insertImportJobSchema, loginSchema, linkedinEnrichmentRequestSchema } from "@shared/schema";
+import { insertContactSchema, insertImportJobSchema, loginSchema, linkedinEnrichmentRequestSchema, insertCompanySchema, insertProspectSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import { enrichContactData } from "../client/src/lib/data-enrichment";
@@ -273,6 +273,218 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, message: "Account deletion initiated" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete account" });
+    }
+  });
+
+  // ============ COMPANY ROUTES ============
+
+  // Get all companies with pagination
+  app.get("/api/companies", requireAuth, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string || '';
+      const industry = req.query.industry as string || '';
+      
+      const result = await storage.getCompanies({ page, limit, search, industry });
+      res.json(result);
+    } catch (error) {
+      console.error('Get companies error:', error);
+      res.status(500).json({ message: "Failed to fetch companies" });
+    }
+  });
+
+  // Get single company
+  app.get("/api/companies/:id", requireAuth, async (req, res) => {
+    try {
+      const company = await storage.getCompany(req.params.id);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found" });
+      }
+      res.json(company);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch company" });
+    }
+  });
+
+  // Create company
+  app.post("/api/companies", requireAuth, async (req, res) => {
+    try {
+      const companyData = insertCompanySchema.parse(req.body);
+      const company = await storage.createCompany(companyData);
+      res.status(201).json(company);
+    } catch (error) {
+      console.error('Create company error:', error);
+      res.status(400).json({ message: "Invalid company data" });
+    }
+  });
+
+  // Update company
+  app.put("/api/companies/:id", requireAuth, async (req, res) => {
+    try {
+      const updates = req.body;
+      const company = await storage.updateCompany(req.params.id, updates);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found" });
+      }
+      res.json(company);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update company" });
+    }
+  });
+
+  // Delete company
+  app.delete("/api/companies/:id", requireAuth, async (req, res) => {
+    try {
+      const success = await storage.deleteCompany(req.params.id);
+      if (!success) {
+        return res.status(404).json({ message: "Company not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete company" });
+    }
+  });
+
+  // Bulk import companies
+  app.post("/api/companies/bulk-import", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fileContent = fs.readFileSync(req.file.path, 'utf-8');
+      const lines = fileContent.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        return res.status(400).json({ message: "File is empty or has no data rows" });
+      }
+
+      const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+      const companies: any[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+        const companyData: any = { name: '' };
+
+        headers.forEach((header, idx) => {
+          const value = values[idx] || '';
+          if (header === 'name' || header === 'company' || header === 'company_name') {
+            companyData.name = value;
+          } else if (header === 'website' || header === 'url') {
+            companyData.website = value;
+          } else if (header === 'domain' || header === 'domains') {
+            companyData.domains = value.split(';').map((d: string) => d.trim()).filter(Boolean);
+          } else if (header === 'industry') {
+            companyData.industry = value;
+          } else if (header === 'employees' || header === 'employee_count') {
+            companyData.employees = parseInt(value) || null;
+          } else if (header === 'employee_size_bracket' || header === 'size') {
+            companyData.employeeSizeBracket = value;
+          } else if (header === 'linkedin' || header === 'linkedin_url') {
+            companyData.linkedinUrl = value;
+          } else if (header === 'city') {
+            companyData.city = value;
+          } else if (header === 'state') {
+            companyData.state = value;
+          } else if (header === 'country') {
+            companyData.country = value;
+          } else if (header === 'description') {
+            companyData.description = value;
+          } else if (header === 'technologies') {
+            companyData.technologies = value.split(';').map((t: string) => t.trim()).filter(Boolean);
+          }
+        });
+
+        // Auto-extract domain from website if not provided
+        if (!companyData.domains?.length && companyData.website) {
+          try {
+            const url = new URL(companyData.website.startsWith('http') ? companyData.website : `https://${companyData.website}`);
+            companyData.domains = [url.hostname.replace('www.', '')];
+          } catch (e) {}
+        }
+
+        if (companyData.name) {
+          companies.push(companyData);
+        }
+      }
+
+      const result = await storage.bulkImportCompanies(companies);
+      
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+
+      res.json({
+        success: true,
+        imported: result.imported,
+        duplicates: result.duplicates,
+        total: companies.length
+      });
+    } catch (error) {
+      console.error('Bulk import companies error:', error);
+      res.status(500).json({ message: "Failed to import companies" });
+    }
+  });
+
+  // ============ PROSPECT ROUTES ============
+
+  // Create prospect (simplified form with auto company matching)
+  app.post("/api/prospects", requireAuth, async (req, res) => {
+    try {
+      const prospectData = insertProspectSchema.parse(req.body);
+      const contact = await storage.createProspect(prospectData);
+      res.status(201).json(contact);
+    } catch (error: any) {
+      console.error('Create prospect error:', error);
+      res.status(400).json({ message: error.message || "Invalid prospect data" });
+    }
+  });
+
+  // Get unmatched prospects (for review queue)
+  app.get("/api/prospects/unmatched", requireAuth, async (req, res) => {
+    try {
+      const prospects = await storage.getUnmatchedProspects();
+      res.json(prospects);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch unmatched prospects" });
+    }
+  });
+
+  // Match single prospect to company
+  app.post("/api/prospects/:id/match", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.matchProspectToCompany(req.params.id);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to match prospect" });
+    }
+  });
+
+  // Bulk match all unmatched prospects
+  app.post("/api/prospects/bulk-match", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.bulkMatchProspectsToCompanies();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to bulk match prospects" });
+    }
+  });
+
+  // Manually assign company to prospect
+  app.post("/api/prospects/:id/assign-company", requireAuth, async (req, res) => {
+    try {
+      const { companyId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: "Company ID is required" });
+      }
+      
+      const contact = await storage.manuallyAssignCompany(req.params.id, companyId);
+      if (!contact) {
+        return res.status(404).json({ message: "Prospect or company not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to assign company" });
     }
   });
   
