@@ -9,8 +9,7 @@ import * as fs from 'fs';
 import csv from 'csv-parser';
 import { storage } from './storage';
 import { companyFieldMapper } from './nlp-mapper';
-import { insertCompanySchema, type InsertCompany } from '@shared/schema';
-import { z } from 'zod';
+import { type InsertCompany } from '@shared/schema';
 
 const pipelineAsync = promisify(pipeline);
 
