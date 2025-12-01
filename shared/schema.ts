@@ -138,9 +138,60 @@ export const apiKeys = pgTable("api_keys", {
   revokedAt: timestamp("revoked_at"),
 });
 
+// Tags table - for categorizing contacts
+export const tags = pgTable("tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  color: text("color").default("#6366f1"),
+  description: text("description"),
+  ownerUserId: varchar("owner_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Contact-Tag junction table for many-to-many relationship
+export const contactTags = pgTable("contact_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").references(() => contacts.id).notNull(),
+  tagId: varchar("tag_id").references(() => tags.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// API request logs for audit trail
+export const apiRequestLogs = pgTable("api_request_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  apiKeyId: varchar("api_key_id").references(() => apiKeys.id).notNull(),
+  traceId: text("trace_id").notNull(),
+  method: text("method").notNull(),
+  path: text("path").notNull(),
+  statusCode: integer("status_code"),
+  responseTimeMs: integer("response_time_ms"),
+  requestBody: jsonb("request_body"),
+  errorMessage: text("error_message"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const contactsRelations = relations(contacts, ({ many }) => ({
   activities: many(contactActivities),
+  contactTags: many(contactTags),
+}));
+
+export const tagsRelations = relations(tags, ({ many }) => ({
+  contactTags: many(contactTags),
+}));
+
+export const contactTagsRelations = relations(contactTags, ({ one }) => ({
+  contact: one(contacts, {
+    fields: [contactTags.contactId],
+    references: [contacts.id],
+  }),
+  tag: one(tags, {
+    fields: [contactTags.tagId],
+    references: [tags.id],
+  }),
 }));
 
 export const contactActivitiesRelations = relations(contactActivities, ({ one }) => ({
@@ -202,6 +253,22 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
   requestCount: true,
 });
 
+export const insertTagSchema = createInsertSchema(tags).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertContactTagSchema = createInsertSchema(contactTags).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertApiRequestLogSchema = createInsertSchema(apiRequestLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -232,5 +299,11 @@ export type EnrichmentJob = typeof enrichmentJobs.$inferSelect;
 export type InsertEnrichmentJob = z.infer<typeof insertEnrichmentJobSchema>;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type Tag = typeof tags.$inferSelect;
+export type InsertTag = z.infer<typeof insertTagSchema>;
+export type ContactTag = typeof contactTags.$inferSelect;
+export type InsertContactTag = z.infer<typeof insertContactTagSchema>;
+export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
+export type InsertApiRequestLog = z.infer<typeof insertApiRequestLogSchema>;
 export type LinkedinEnrichmentRequest = z.infer<typeof linkedinEnrichmentRequestSchema>;
 export type LoginCredentials = z.infer<typeof loginSchema>;

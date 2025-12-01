@@ -12,6 +12,8 @@ import { advancedCSVProcessor } from "./csv-processor";
 import { authenticateUser, requireAuth, initializeDefaultUser } from "./auth";
 import { linkedinEnrichmentService } from "./linkedin-enrichment";
 import { validateApiKey, generateApiKey, hashApiKey } from "./api-auth";
+import { apiV1Router } from "./api-v1-routes";
+import { API_SCOPES } from "./api-v1-middleware";
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -40,6 +42,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   } catch (error) {
     console.error('❌ Failed to fix empty full names on startup:', error);
   }
+
+  // Register API v1 routes
+  app.use("/api/v1", apiV1Router);
+  console.log("✅ API v1 routes registered at /api/v1");
 
   // Authentication routes
   app.post("/api/login", async (req, res) => {
@@ -1447,7 +1453,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/api-keys", requireAuth, async (req, res) => {
     try {
       const userId = (req as any).user.id;
-      const { label, rateLimitPerMinute } = req.body;
+      const { label, rateLimitPerMinute, scopes } = req.body;
 
       if (!label || typeof label !== "string" || label.trim().length === 0) {
         return res.status(400).json({
@@ -1457,12 +1463,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { key, hashedKey } = generateApiKey();
+      
+      const defaultScopes = [
+        API_SCOPES.CONTACTS_READ,
+        API_SCOPES.CONTACTS_WRITE,
+        API_SCOPES.CONTACTS_DELETE,
+        API_SCOPES.CONTACTS_BULK,
+        API_SCOPES.ENRICHMENT_RUN,
+        API_SCOPES.ENRICHMENT_READ,
+        API_SCOPES.STATS_READ,
+        API_SCOPES.TAGS_READ,
+        API_SCOPES.TAGS_WRITE,
+        API_SCOPES.ACTIVITIES_READ,
+      ];
+      
+      const validScopes = Object.values(API_SCOPES);
+      const requestedScopes = Array.isArray(scopes) 
+        ? scopes.filter((s: string) => validScopes.includes(s as any))
+        : defaultScopes;
 
       const apiKey = await storage.createApiKey({
         hashedKey,
         label: label.trim(),
         ownerUserId: userId,
-        scopes: ["prospects:read"],
+        scopes: requestedScopes.length > 0 ? requestedScopes : defaultScopes,
         rateLimitPerMinute: rateLimitPerMinute || 60,
       });
 

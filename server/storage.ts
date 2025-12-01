@@ -6,6 +6,9 @@ import {
   sessions,
   enrichmentJobs,
   apiKeys,
+  tags,
+  contactTags,
+  apiRequestLogs,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -19,7 +22,13 @@ import {
   type EnrichmentJob,
   type InsertEnrichmentJob,
   type ApiKey,
-  type InsertApiKey
+  type InsertApiKey,
+  type Tag,
+  type InsertTag,
+  type ContactTag,
+  type InsertContactTag,
+  type ApiRequestLog,
+  type InsertApiRequestLog
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
@@ -104,6 +113,25 @@ export interface IStorage {
   getUserApiKeys(userId: string): Promise<ApiKey[]>;
   updateApiKeyUsage(id: string): Promise<void>;
   revokeApiKey(id: string): Promise<boolean>;
+  
+  // Tag operations
+  getTags(): Promise<Tag[]>;
+  getTag(id: string): Promise<Tag | undefined>;
+  createTag(tag: InsertTag): Promise<Tag>;
+  deleteTag(id: string): Promise<boolean>;
+  getContactTags(contactId: string): Promise<Tag[]>;
+  addTagToContact(contactId: string, tagId: string): Promise<ContactTag>;
+  removeTagFromContact(contactId: string, tagId: string): Promise<boolean>;
+  
+  // Activity operations
+  getRecentActivities(limit?: number): Promise<ContactActivity[]>;
+  
+  // API Request Logging
+  logApiRequest(log: InsertApiRequestLog): Promise<ApiRequestLog>;
+  
+  // User operations
+  getUserById(id: string): Promise<User | undefined>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
 }
 
 // Utility function to generate full name from first and last name
@@ -1327,6 +1355,100 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apiKeys.id, id))
       .returning();
     return !!revoked;
+  }
+
+  // Tag operations
+  async getTags(): Promise<Tag[]> {
+    return await db
+      .select()
+      .from(tags)
+      .orderBy(asc(tags.name));
+  }
+
+  async getTag(id: string): Promise<Tag | undefined> {
+    const [tag] = await db
+      .select()
+      .from(tags)
+      .where(eq(tags.id, id));
+    return tag || undefined;
+  }
+
+  async createTag(tag: InsertTag): Promise<Tag> {
+    const [newTag] = await db
+      .insert(tags)
+      .values(tag)
+      .returning();
+    return newTag;
+  }
+
+  async deleteTag(id: string): Promise<boolean> {
+    await db
+      .delete(contactTags)
+      .where(eq(contactTags.tagId, id));
+    
+    const [deleted] = await db
+      .delete(tags)
+      .where(eq(tags.id, id))
+      .returning();
+    return !!deleted;
+  }
+
+  async getContactTags(contactId: string): Promise<Tag[]> {
+    const result = await db
+      .select({ tag: tags })
+      .from(contactTags)
+      .innerJoin(tags, eq(contactTags.tagId, tags.id))
+      .where(eq(contactTags.contactId, contactId));
+    return result.map(r => r.tag);
+  }
+
+  async addTagToContact(contactId: string, tagId: string): Promise<ContactTag> {
+    const existing = await db
+      .select()
+      .from(contactTags)
+      .where(and(
+        eq(contactTags.contactId, contactId),
+        eq(contactTags.tagId, tagId)
+      ));
+    
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    
+    const [contactTag] = await db
+      .insert(contactTags)
+      .values({ contactId, tagId })
+      .returning();
+    return contactTag;
+  }
+
+  async removeTagFromContact(contactId: string, tagId: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(contactTags)
+      .where(and(
+        eq(contactTags.contactId, contactId),
+        eq(contactTags.tagId, tagId)
+      ))
+      .returning();
+    return !!deleted;
+  }
+
+  // Activity operations
+  async getRecentActivities(limit: number = 100): Promise<ContactActivity[]> {
+    return await db
+      .select()
+      .from(contactActivities)
+      .orderBy(desc(contactActivities.createdAt))
+      .limit(limit);
+  }
+
+  // API Request Logging
+  async logApiRequest(log: InsertApiRequestLog): Promise<ApiRequestLog> {
+    const [requestLog] = await db
+      .insert(apiRequestLogs)
+      .values(log)
+      .returning();
+    return requestLog;
   }
 }
 
