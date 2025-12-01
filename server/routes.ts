@@ -14,8 +14,16 @@ import { linkedinEnrichmentService } from "./linkedin-enrichment";
 import { validateApiKey, generateApiKey, hashApiKey } from "./api-auth";
 import { apiV1Router } from "./api-v1-routes";
 import { API_SCOPES } from "./api-v1-middleware";
+import fs from "fs";
+import path from "path";
 
-const upload = multer({ dest: 'uploads/' });
+const UPLOADS_DIR = 'uploads';
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  console.log(`📁 Created uploads directory: ${UPLOADS_DIR}`);
+}
+
+const upload = multer({ dest: UPLOADS_DIR });
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session middleware
@@ -717,9 +725,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const estimatedTime = StreamingCSVParser.estimateProcessingTime(req.file.path);
 
       // Store file for later import with improved naming
-      const fs = await import('fs');
       const tempFileName = `${Date.now()}_${Buffer.from(req.file.originalname).toString('hex')}.csv`;
-      const tempPath = `uploads/${tempFileName}`;
+      const tempPath = `${UPLOADS_DIR}/${tempFileName}`;
       fs.renameSync(req.file.path, tempPath);
 
       res.json({
