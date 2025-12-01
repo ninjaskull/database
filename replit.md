@@ -2,7 +2,17 @@
 
 This is a modern full-stack CRM application for managing contact databases. Built with React on the frontend, Express on the backend, and PostgreSQL with Drizzle ORM for data management. The application features comprehensive contact management with data enrichment capabilities, CSV import functionality, and real-time activity tracking.
 
-## Recent Changes (Nov 28, 2025)
+## Recent Changes (Dec 1, 2025)
+- **Comprehensive API Documentation**: Created detailed API documentation at `Apidocs.md` covering all endpoints, authentication methods, integration examples, and best practices for external app integration
+- **API Documentation Includes**: 
+  - API v1 endpoints (contacts, tags, activities, enrichment, statistics)
+  - Public API endpoints for external integrations
+  - Session-based endpoints for admin operations
+  - Import/export functionality documentation
+  - Integration examples for Zapier, Make, n8n, Salesforce, HubSpot, and Google Sheets
+  - Best practices and troubleshooting guide
+
+## Previous Changes (Nov 28, 2025)
 - **Database Provisioned**: PostgreSQL database has been provisioned and configured with environment variables (DATABASE_URL, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGHOST)
 - **LinkedIn API Documentation**: Created comprehensive documentation at `docs/LINKEDIN_API_SEARCH.md` covering all official LinkedIn search APIs, authentication, rate limiting, and alternative approaches
 - **Public API for External Integrations**: Added public API endpoints (`POST /api/public/contacts` and `POST /api/public/contacts/bulk`) that allow external applications to programmatically create contacts using API key authentication
