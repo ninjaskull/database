@@ -10,8 +10,10 @@ export const companies = pgTable("companies", {
   
   // Company Identity
   name: text("name").notNull(),
+  nameForEmails: text("name_for_emails"),
   website: text("website"),
   linkedinUrl: text("linkedin_url"),
+  logoUrl: text("logo_url"),
   
   // Domains for matching (e.g., ["acme.com", "acme.io"])
   domains: text("domains").array().default(sql`ARRAY[]::text[]`),
@@ -20,19 +22,39 @@ export const companies = pgTable("companies", {
   industry: text("industry"),
   employees: integer("employees"),
   employeeSizeBracket: text("employee_size_bracket"),
-  annualRevenue: decimal("annual_revenue"),
-  foundedYear: integer("founded_year"),
+  shortDescription: text("short_description"),
+  keywords: text("keywords"),
+  businessType: text("business_type"),
+  
+  // Contact Information
+  phone: text("phone"),
   
   // Location
-  address: text("address"),
+  street: text("street"),
   city: text("city"),
   state: text("state"),
   country: text("country"),
+  postalCode: text("postal_code"),
+  address: text("address"),
   
-  // Additional Info
-  description: text("description"),
-  technologies: text("technologies").array(),
-  businessType: text("business_type"),
+  // Technology & Industry
+  technologies: text("technologies"),
+  sicCodes: text("sic_codes"),
+  naicsCodes: text("naics_codes"),
+  
+  // Financial Information
+  annualRevenue: text("annual_revenue"),
+  totalFunding: text("total_funding"),
+  latestFunding: text("latest_funding"),
+  latestFundingAmount: text("latest_funding_amount"),
+  lastRaisedAt: text("last_raised_at"),
+  
+  // Business Metrics
+  retailLocations: integer("retail_locations"),
+  foundedYear: integer("founded_year"),
+  
+  // Corporate Structure
+  subsidiaryOf: text("subsidiary_of"),
   
   // Data Quality
   isVerified: boolean("is_verified").default(false),

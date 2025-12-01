@@ -12,11 +12,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
+import { CompanyImportWizard } from "@/components/import/company-import-wizard";
+import { Upload, Building2 } from "lucide-react";
 
 export default function Companies() {
   const [search, setSearch] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showImportWizard, setShowImportWizard] = useState(false);
   const [newCompany, setNewCompany] = useState({
     name: '',
     website: '',
@@ -29,7 +31,6 @@ export default function Companies() {
     country: '',
     description: '',
   });
-  const [importFile, setImportFile] = useState<File | null>(null);
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -85,36 +86,6 @@ export default function Companies() {
     },
   });
 
-  const importCompaniesMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      const response = await fetch('/api/companies/bulk-import', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Import failed');
-      return response.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      setShowImportDialog(false);
-      setImportFile(null);
-      toast({
-        title: "Import complete",
-        description: `Imported ${data.imported} companies. ${data.duplicates} duplicates skipped.`,
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Import failed",
-        description: "Failed to import companies. Check your file format.",
-        variant: "destructive",
-      });
-    },
-  });
-
   const handleCreateCompany = () => {
     const companyData = {
       name: newCompany.name,
@@ -129,12 +100,6 @@ export default function Companies() {
       description: newCompany.description || null,
     };
     createCompanyMutation.mutate(companyData);
-  };
-
-  const handleImport = () => {
-    if (importFile) {
-      importCompaniesMutation.mutate(importFile);
-    }
   };
 
   return (
@@ -155,41 +120,14 @@ export default function Companies() {
                   </p>
                 </div>
                 <div className="flex gap-3">
-                  <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" data-testid="button-import-companies">
-                        <i className="fas fa-file-import mr-2"></i>
-                        Import CSV
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Import Companies</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <p className="text-sm text-gray-500">
-                          Upload a CSV file with company data. Required column: <strong>name</strong>. 
-                          Optional columns: website, domain, industry, employees, city, state, country, description, technologies.
-                        </p>
-                        <Input
-                          type="file"
-                          accept=".csv"
-                          onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                          data-testid="input-company-file"
-                        />
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
-                        <Button 
-                          onClick={handleImport} 
-                          disabled={!importFile || importCompaniesMutation.isPending}
-                          data-testid="button-confirm-import"
-                        >
-                          {importCompaniesMutation.isPending ? 'Importing...' : 'Import'}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowImportWizard(true)}
+                    data-testid="button-import-companies"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Smart Import
+                  </Button>
 
                   <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
                     <DialogTrigger asChild>
@@ -381,6 +319,18 @@ export default function Companies() {
           </div>
         </main>
       </div>
+
+      <CompanyImportWizard
+        open={showImportWizard}
+        onOpenChange={setShowImportWizard}
+        onImportComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+          toast({
+            title: "Import complete",
+            description: "Companies have been imported successfully.",
+          });
+        }}
+      />
     </div>
   );
 }

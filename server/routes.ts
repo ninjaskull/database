@@ -6,7 +6,8 @@ import { insertContactSchema, insertImportJobSchema, loginSchema, linkedinEnrich
 import { z } from "zod";
 import multer from "multer";
 import { enrichContactData } from "../client/src/lib/data-enrichment";
-import { csvFieldMapper } from "./nlp-mapper";
+import { csvFieldMapper, companyFieldMapper } from "./nlp-mapper";
+import { companyCSVProcessor } from "./company-csv-processor";
 import { StreamingCSVParser } from "./streaming-csv-parser";
 import { advancedCSVProcessor } from "./csv-processor";
 import { authenticateUser, requireAuth, initializeDefaultUser } from "./auth";
@@ -1026,6 +1027,146 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch import job" });
     }
   });
+
+  // ==================== COMPANY IMPORT ROUTES ====================
+
+  // Auto-map company CSV headers using NLP
+  app.post("/api/companies/import/auto-map", upload.single('csv'), requireAuth, async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      // Validate CSV structure first
+      const validation = await StreamingCSVParser.validateCSVStructure(req.file.path);
+      if (!validation.isValid) {
+        return res.status(400).json({ 
+          message: "Invalid CSV file structure",
+          issues: validation.issues,
+          recommendations: validation.recommendations
+        });
+      }
+
+      // Fast CSV analysis with streaming parser
+      const analysis = await StreamingCSVParser.analyzeCSVFile(req.file.path);
+      
+      // Auto-detect optimal delimiter
+      const delimiter = await StreamingCSVParser.detectDelimiter(req.file.path);
+      
+      // Use company NLP model to automatically map fields
+      const { mapping: autoMapping, confidence, suggestions } = await companyCSVProcessor.getAutoMapping(analysis.headers);
+
+      // Estimate processing time for user feedback
+      const estimatedTime = StreamingCSVParser.estimateProcessingTime(req.file.path);
+
+      // Store file for later import with improved naming
+      const tempFileName = `company_${Date.now()}_${Buffer.from(req.file.originalname).toString('hex')}.csv`;
+      const tempPath = `${UPLOADS_DIR}/${tempFileName}`;
+      fs.renameSync(req.file.path, tempPath);
+
+      // Get available fields for manual mapping
+      const availableFields = companyCSVProcessor.getAvailableFields();
+
+      res.json({
+        headers: analysis.headers,
+        autoMapping,
+        confidence,
+        suggestions,
+        preview: analysis.preview,
+        totalRows: analysis.totalRows,
+        tempFile: tempFileName,
+        delimiter,
+        estimatedProcessingTime: estimatedTime,
+        availableFields,
+        validation: {
+          isValid: validation.isValid,
+          recommendations: validation.recommendations
+        }
+      });
+    } catch (error) {
+      console.error('Company auto-mapping error:', error);
+      res.status(500).json({ 
+        message: "Failed to analyze company CSV file",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Execute company import
+  app.post("/api/companies/import", requireAuth, async (req, res) => {
+    try {
+      const { tempFile, fieldMapping, options = {} } = req.body;
+      
+      if (!tempFile) {
+        return res.status(400).json({ message: "No temporary file specified" });
+      }
+
+      const filePath = `${UPLOADS_DIR}/${tempFile}`;
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(400).json({ message: "Temporary file not found. Please re-upload the CSV." });
+      }
+
+      // Parse import options with defaults
+      const importOptions = {
+        skipDuplicates: options.skipDuplicates !== false,
+        updateExisting: options.updateExisting === true,
+        batchSize: 100,
+        fieldMapping: fieldMapping || {}
+      };
+
+      // Create import job
+      const job = await storage.createImportJob({
+        filename: tempFile,
+        status: 'processing',
+        totalRows: 0,
+        processedRows: 0,
+        successfulRows: 0,
+        errorRows: 0,
+        duplicateRows: 0,
+        fieldMapping: importOptions.fieldMapping,
+        errors: null,
+      });
+
+      // Start async processing
+      companyCSVProcessor.processCompanyCSV(filePath, job.id, importOptions)
+        .then(() => {
+          // Clean up temp file after processing
+          try {
+            fs.unlinkSync(filePath);
+          } catch (e) {
+            console.warn('Failed to clean up temp file:', e);
+          }
+        })
+        .catch((error) => {
+          console.error('Company CSV processing failed:', error);
+        });
+
+      res.status(202).json({ 
+        jobId: job.id, 
+        message: "Company import started - processing with smart field mapping",
+        estimatedTime: StreamingCSVParser.estimateProcessingTime(filePath)
+      });
+    } catch (error) {
+      console.error('Company import initialization failed:', error);
+      res.status(500).json({ 
+        message: "Failed to start company import",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Get available company fields for mapping
+  app.get("/api/companies/import/fields", requireAuth, async (req, res) => {
+    try {
+      const fields = companyCSVProcessor.getAvailableFields();
+      res.json(fields);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get company fields" });
+    }
+  });
+
+  // ==================== END COMPANY IMPORT ROUTES ====================
 
   // Fix incorrectly mapped full names
   app.post("/api/fix-fullnames", async (req, res) => {
