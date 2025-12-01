@@ -32,6 +32,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
+import { CompanyMatcher } from "./company-matcher";
 
 export interface IStorage {
   // Contact operations
@@ -91,8 +92,8 @@ export interface IStorage {
   // Utility operations
   fixEmptyFullNames(): Promise<number>;
   
-  // Company details auto-fill operations
-  getCompanyTemplate(companyName: string): Promise<Partial<Contact> | null>;
+  // Company details auto-fill operations (enhanced with email domain matching)
+  getCompanyTemplate(companyName?: string, website?: string, companyLinkedIn?: string, email?: string): Promise<Partial<Contact> | null>;
   createContactWithAutoFill(contact: InsertContact): Promise<Contact>;
   updateContactWithAutoFill(id: string, updates: Partial<InsertContact>): Promise<Contact | undefined>;
   bulkAutoFillCompanyDetails(): Promise<{ processed: number; updated: number; companiesProcessed: string[] }>;
@@ -922,29 +923,55 @@ export class DatabaseStorage implements IStorage {
     return fixedCount;
   }
 
-  // Enhanced company auto-fill functionality - searches by company name, website, or LinkedIn
-  async getCompanyTemplate(companyName?: string, website?: string, companyLinkedIn?: string): Promise<Partial<Contact> | null> {
-    // Build search conditions for any of the three key identifiers
+  // Enhanced company auto-fill functionality with smart matching
+  // Uses email domain extraction, company name normalization, fuzzy matching, and multi-source data merging
+  async getCompanyTemplate(
+    companyName?: string, 
+    website?: string, 
+    companyLinkedIn?: string,
+    email?: string
+  ): Promise<Partial<Contact> | null> {
+    // Extract email domain for additional matching
+    const emailDomain = CompanyMatcher.extractEmailDomain(email);
+    
+    // Build comprehensive search conditions
     const searchConditions = [];
     
+    // Normalized company name matching
     if (companyName?.trim()) {
-      searchConditions.push(ilike(contacts.company, `%${companyName.trim()}%`));
+      const normalizedName = CompanyMatcher.normalizeCompanyName(companyName);
+      if (normalizedName) {
+        searchConditions.push(ilike(contacts.company, `%${companyName.trim()}%`));
+        // Also search for normalized version if different
+        if (normalizedName !== companyName.toLowerCase().trim()) {
+          searchConditions.push(ilike(contacts.company, `%${normalizedName}%`));
+        }
+      }
     }
     
+    // Website domain matching
     if (website?.trim()) {
-      // Clean URL for better matching
-      const cleanWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-      searchConditions.push(ilike(contacts.website, `%${cleanWebsite}%`));
+      const cleanWebsite = CompanyMatcher.normalizeWebsite(website);
+      if (cleanWebsite) {
+        searchConditions.push(ilike(contacts.website, `%${cleanWebsite}%`));
+      }
     }
     
+    // Company LinkedIn matching
     if (companyLinkedIn?.trim()) {
       const cleanLinkedIn = companyLinkedIn.replace(/^https?:\/\//, '').replace(/^www\./, '');
       searchConditions.push(ilike(contacts.companyLinkedIn, `%${cleanLinkedIn}%`));
     }
+    
+    // Email domain matching - powerful for finding company contacts
+    if (emailDomain) {
+      searchConditions.push(ilike(contacts.email, `%@${emailDomain}`));
+      searchConditions.push(ilike(contacts.website, `%${emailDomain}%`));
+    }
 
     if (searchConditions.length === 0) return null;
 
-    // Find contacts matching any of the identifiers
+    // Find contacts matching any of the identifiers (limit to 100 for performance)
     const companyContacts = await db
       .select()
       .from(contacts)
@@ -952,65 +979,59 @@ export class DatabaseStorage implements IStorage {
         eq(contacts.isDeleted, false),
         or(...searchConditions)
       ))
-      .orderBy(desc(contacts.createdAt));
+      .orderBy(desc(contacts.createdAt))
+      .limit(100);
 
     if (companyContacts.length === 0) return null;
 
-    // Score each contact based on how much company info they have
-    const scoredContacts = companyContacts.map(contact => {
-      let score = 0;
-      const companyFields = [
-        'company', 'employees', 'employeeSizeBracket', 'industry', 'website', 
-        'companyLinkedIn', 'technologies', 'annualRevenue', 'companyAddress', 
-        'companyCity', 'companyState', 'companyCountry', 'companyAge', 
-        'technologyCategory', 'businessType'
-      ];
+    // Use advanced scoring to find best matches
+    const bestMatches = CompanyMatcher.findBestMatches(
+      companyContacts,
+      companyName,
+      website,
+      companyLinkedIn,
+      email,
+      10  // Get top 10 matches
+    );
 
-      companyFields.forEach(field => {
-        const value = contact[field as keyof Contact];
-        if (value !== null && value !== undefined && value !== '') {
-          if (Array.isArray(value) && value.length > 0) score++;
-          else if (!Array.isArray(value)) score++;
-        }
-      });
+    if (bestMatches.length === 0) return null;
 
-      return { contact, score };
-    });
+    // Filter to only high-confidence matches (score > 30)
+    const highConfidenceMatches = bestMatches.filter(m => m.score > 30);
+    
+    if (highConfidenceMatches.length === 0) {
+      // Fall back to best single match if no high confidence matches
+      return CompanyMatcher.extractCompanyFields(bestMatches[0].contact);
+    }
 
-    // Get the contact with the highest score (most complete company info)
-    const bestContact = scoredContacts.reduce((best, current) => 
-      current.score > best.score ? current : best
-    ).contact;
+    // Merge data from multiple high-quality sources for the most complete template
+    const matchedContacts = highConfidenceMatches.map(m => m.contact);
+    const mergedTemplate = CompanyMatcher.mergeCompanyData(matchedContacts);
 
-    // Extract only company-related fields for the template
-    const companyTemplate: Partial<Contact> = {};
-    const companyFields = [
-      'company', 'employees', 'employeeSizeBracket', 'industry', 'website', 
-      'companyLinkedIn', 'technologies', 'annualRevenue', 'companyAddress', 
-      'companyCity', 'companyState', 'companyCountry', 'companyAge', 
-      'technologyCategory', 'businessType'
-    ] as const;
+    // Ensure we have meaningful data (at least company name + 1 more field)
+    const fieldCount = Object.keys(mergedTemplate).length;
+    if (fieldCount < 2) return null;
 
-    companyFields.forEach(field => {
-      const value = bestContact[field];
-      if (value !== null && value !== undefined && value !== '') {
-        (companyTemplate as any)[field] = value;
-      }
-    });
-
-    return Object.keys(companyTemplate).length > 1 ? companyTemplate : null; // At least company name + 1 more field
+    return mergedTemplate;
   }
 
   async createContactWithAutoFill(insertContact: InsertContact): Promise<Contact> {
     let contactData = { ...insertContact };
     let autoFilledFields: string[] = [];
 
-    // If any company identifier is provided, try to auto-fill company details
-    if (contactData.company?.trim() || contactData.website?.trim() || contactData.companyLinkedIn?.trim()) {
+    // Smart company auto-fill: uses company name, website, LinkedIn, AND email domain
+    const hasCompanyIdentifier = 
+      contactData.company?.trim() || 
+      contactData.website?.trim() || 
+      contactData.companyLinkedIn?.trim() ||
+      contactData.email?.trim();  // Email domain can identify company
+
+    if (hasCompanyIdentifier) {
       const companyTemplate = await this.getCompanyTemplate(
         contactData.company || undefined, 
         contactData.website || undefined, 
-        contactData.companyLinkedIn || undefined
+        contactData.companyLinkedIn || undefined,
+        contactData.email || undefined  // Use email for domain-based matching
       );
       
       if (companyTemplate) {
@@ -1067,17 +1088,27 @@ export class DatabaseStorage implements IStorage {
     let autoFilledFields: string[] = [];
     let activityDescription = 'Contact information updated';
 
-    // Check if company name is being changed or added, or if company exists but fields are missing
+    // Smart company auto-fill: uses company name, website, LinkedIn, AND email domain
     const newCompany = contactData.company;
     const oldCompany = existingContact.company;
     const companyToCheck = newCompany || oldCompany;
+    const emailToUse = contactData.email || existingContact.email;
     
-    if (companyToCheck?.trim() || existingContact.website?.trim() || existingContact.companyLinkedIn?.trim()) {
+    const hasCompanyIdentifier = 
+      companyToCheck?.trim() || 
+      existingContact.website?.trim() || 
+      contactData.website?.trim() ||
+      existingContact.companyLinkedIn?.trim() || 
+      contactData.companyLinkedIn?.trim() ||
+      emailToUse?.trim();  // Email domain can identify company
+
+    if (hasCompanyIdentifier) {
       // Company identifiers exist - try to auto-fill missing company details
       const companyTemplate = await this.getCompanyTemplate(
         companyToCheck || undefined, 
         (contactData.website || existingContact.website) || undefined, 
-        (contactData.companyLinkedIn || existingContact.companyLinkedIn) || undefined
+        (contactData.companyLinkedIn || existingContact.companyLinkedIn) || undefined,
+        emailToUse || undefined  // Use email for domain-based matching
       );
       
       if (companyTemplate) {
@@ -1098,8 +1129,6 @@ export class DatabaseStorage implements IStorage {
           }
         });
 
-        // Log completion for debugging if needed
-        
         if (autoFilledFields.length > 0) {
           activityDescription += ` with auto-filled company details: ${autoFilledFields.join(', ')}`;
         }
@@ -1137,9 +1166,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async bulkAutoFillCompanyDetails(): Promise<{ processed: number; updated: number; companiesProcessed: string[] }> {
-    console.log('🔧 Starting bulk company auto-fill process...');
+    console.log('🔧 Starting smart bulk company auto-fill process...');
     
-    // Get all contacts that have any company identifier (name, website, or LinkedIn)
+    // Get all contacts that have any company identifier (name, website, LinkedIn, or email)
     const contactsToProcess = await db
       .select()
       .from(contacts)
@@ -1148,11 +1177,12 @@ export class DatabaseStorage implements IStorage {
         or(
           and(isNotNull(contacts.company), ne(contacts.company, '')),
           and(isNotNull(contacts.website), ne(contacts.website, '')),
-          and(isNotNull(contacts.companyLinkedIn), ne(contacts.companyLinkedIn, ''))
+          and(isNotNull(contacts.companyLinkedIn), ne(contacts.companyLinkedIn, '')),
+          and(isNotNull(contacts.email), ne(contacts.email, ''))  // Include email-based matching
         )
       ));
 
-    console.log(`📊 Found ${contactsToProcess.length} contacts with company names`);
+    console.log(`📊 Found ${contactsToProcess.length} contacts with company identifiers`);
 
     let processed = 0;
     let updated = 0;
@@ -1160,13 +1190,18 @@ export class DatabaseStorage implements IStorage {
     const companyTemplateCache = new Map<string, Partial<Contact> | null>();
 
     for (const contact of contactsToProcess) {
-      // Skip if no identifiers are available
-      if (!contact.company?.trim() && !contact.website?.trim() && !contact.companyLinkedIn?.trim()) continue;
+      // Extract email domain for smarter caching
+      const emailDomain = CompanyMatcher.extractEmailDomain(contact.email);
+      
+      // Skip if no useful identifiers are available
+      if (!contact.company?.trim() && !contact.website?.trim() && !contact.companyLinkedIn?.trim() && !emailDomain) continue;
       
       processed++;
       
-      // Create cache key from available identifiers
-      const cacheKey = `${contact.company || ''}|${contact.website || ''}|${contact.companyLinkedIn || ''}`;
+      // Create cache key from available identifiers including email domain
+      const normalizedCompany = CompanyMatcher.normalizeCompanyName(contact.company);
+      const normalizedWebsite = CompanyMatcher.normalizeWebsite(contact.website);
+      const cacheKey = `${normalizedCompany}|${normalizedWebsite}|${contact.companyLinkedIn || ''}|${emailDomain || ''}`;
       
       // Get or cache company template using any available identifiers
       let companyTemplate = companyTemplateCache.get(cacheKey);
@@ -1174,7 +1209,8 @@ export class DatabaseStorage implements IStorage {
         companyTemplate = await this.getCompanyTemplate(
           contact.company || undefined, 
           contact.website || undefined, 
-          contact.companyLinkedIn || undefined
+          contact.companyLinkedIn || undefined,
+          contact.email || undefined  // Use email for domain-based matching
         );
         companyTemplateCache.set(cacheKey, companyTemplate);
       }

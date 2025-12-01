@@ -894,11 +894,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get company template for auto-fill preview
+  // Get company template for auto-fill preview (enhanced with smart matching)
   app.get("/api/companies/:companyName/template", requireAuth, async (req, res) => {
     try {
       const companyName = decodeURIComponent(req.params.companyName);
-      const template = await storage.getCompanyTemplate(companyName);
+      // Support optional query parameters for better matching
+      const website = req.query.website as string | undefined;
+      const companyLinkedIn = req.query.companyLinkedIn as string | undefined;
+      const email = req.query.email as string | undefined;
+      
+      const template = await storage.getCompanyTemplate(companyName, website, companyLinkedIn, email);
       
       if (!template) {
         return res.json({ 

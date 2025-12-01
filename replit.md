@@ -3,6 +3,16 @@
 This is a modern full-stack CRM application for managing contact databases. Built with React on the frontend, Express on the backend, and PostgreSQL with Drizzle ORM for data management. The application features comprehensive contact management with data enrichment capabilities, CSV import functionality, and real-time activity tracking.
 
 ## Recent Changes (Dec 1, 2025)
+- **Enhanced Smart Company Auto-Fill System**: Completely rebuilt company matching with intelligent algorithms:
+  - Email domain extraction (filters out personal providers like Gmail, Yahoo)
+  - Company name normalization (removes Inc, LLC, Ltd suffixes for better matching)
+  - Fuzzy matching using Levenshtein distance algorithm
+  - Weighted scoring system for company fields (website = 8 points, LinkedIn = 7, industry = 6, etc.)
+  - Data quality assessment to find the most complete company records
+  - Multi-source data merging to combine best fields from multiple contacts
+- **New CompanyMatcher Utility**: Created `server/company-matcher.ts` with reusable matching functions
+- **Email Domain-Based Company Detection**: Contacts with the same email domain (e.g., @acme.com) are now matched automatically even without explicit company name
+- **Fixed CSV Import Auto-Mapping**: Fixed "ENOENT: no such file or directory" error by ensuring uploads directory exists
 - **Comprehensive API Documentation**: Created detailed API documentation at `Apidocs.md` covering all endpoints, authentication methods, integration examples, and best practices for external app integration
 - **API Documentation Includes**: 
   - API v1 endpoints (contacts, tags, activities, enrichment, statistics)
