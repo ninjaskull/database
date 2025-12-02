@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { wsHub } from "./ws-hub";
 
 const app = express();
 app.use(express.json());
@@ -55,6 +56,9 @@ app.use((req, res, next) => {
   } else {
     serveStatic(app);
   }
+
+  // Initialize WebSocket hub for real-time import progress
+  wsHub.initialize(server);
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.

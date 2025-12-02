@@ -1,6 +1,7 @@
 /**
  * Company CSV Processing Engine
  * Handles CSV parsing, field mapping, and bulk import of companies
+ * Features: WebSocket progress broadcasting, optimized batching
  */
 
 import { Transform, pipeline } from 'stream';
@@ -10,6 +11,7 @@ import csv from 'csv-parser';
 import { storage } from './storage';
 import { companyFieldMapper } from './nlp-mapper';
 import { type InsertCompany } from '@shared/schema';
+import { wsHub } from './ws-hub';
 
 const pipelineAsync = promisify(pipeline);
 
@@ -32,7 +34,8 @@ export class CompanyCSVProcessor {
   private batchSize = 500;
   private duplicateCache = new Map<string, any>();
   private errorAccumulator: any[] = [];
-  private progressUpdateInterval = 500;
+  private lastProgressBroadcast = 0;
+  private progressBroadcastInterval = 100;
 
   async processCompanyCSV(
     filePath: string,
@@ -47,6 +50,9 @@ export class CompanyCSVProcessor {
       updated: 0
     };
 
+    const startTime = Date.now();
+    this.errorAccumulator = [];
+
     try {
       await this.preloadDuplicateCache();
 
@@ -58,24 +64,77 @@ export class CompanyCSVProcessor {
         processedRows: 0,
       });
 
-      const batches: any[][] = [];
-      let currentBatch: any[] = [];
+      // Broadcast initial status via WebSocket
+      wsHub.broadcast(jobId, {
+        status: 'processing',
+        totalRows: totalRows - 1,
+        processedRows: 0,
+        successfulRows: 0,
+        errorRows: 0,
+        duplicateRows: 0,
+        message: 'Starting company import...'
+      }, true);
 
-      const batchProcessor = new Transform({
+      // True streaming: process batches on the fly without accumulating in memory
+      let currentBatch: any[] = [];
+      let lastDbUpdate = Date.now();
+      const dbUpdateInterval = 2000;
+
+      const streamProcessor = new Transform({
         objectMode: true,
-        transform: (record: any, encoding, callback) => {
+        transform: async (record: any, encoding, callback) => {
           currentBatch.push(record);
           
           if (currentBatch.length >= this.batchSize) {
-            batches.push([...currentBatch]);
-            currentBatch = [];
+            try {
+              const batchResults = await this.processBatchOptimized([...currentBatch], options);
+              
+              stats.processed += batchResults.processed;
+              stats.successful += batchResults.successful;
+              stats.errors += batchResults.errors;
+              stats.duplicates += batchResults.duplicates;
+              stats.updated += batchResults.updated;
+
+              // Broadcast progress via WebSocket
+              this.broadcastProgress(jobId, stats, totalRows - 1);
+
+              // Update database periodically
+              const now = Date.now();
+              if (now - lastDbUpdate >= dbUpdateInterval) {
+                await storage.updateImportJob(jobId, {
+                  processedRows: stats.processed,
+                  successfulRows: stats.successful,
+                  errorRows: stats.errors,
+                  duplicateRows: stats.duplicates,
+                });
+                lastDbUpdate = now;
+              }
+
+              currentBatch = [];
+            } catch (error) {
+              console.error('Batch processing error:', error);
+              stats.errors += currentBatch.length;
+              currentBatch = [];
+            }
           }
           
           callback();
         },
-        flush: (callback) => {
+        flush: async (callback) => {
+          // Process remaining records
           if (currentBatch.length > 0) {
-            batches.push([...currentBatch]);
+            try {
+              const batchResults = await this.processBatchOptimized([...currentBatch], options);
+              
+              stats.processed += batchResults.processed;
+              stats.successful += batchResults.successful;
+              stats.errors += batchResults.errors;
+              stats.duplicates += batchResults.duplicates;
+              stats.updated += batchResults.updated;
+            } catch (error) {
+              console.error('Final batch error:', error);
+              stats.errors += currentBatch.length;
+            }
           }
           callback();
         }
@@ -84,30 +143,10 @@ export class CompanyCSVProcessor {
       await pipelineAsync(
         fs.createReadStream(filePath),
         csv(),
-        batchProcessor
+        streamProcessor
       );
 
-      let lastProgressUpdate = Date.now();
-      
-      for (const batch of batches) {
-        const batchResults = await this.processBatchOptimized(batch, options);
-        stats.processed += batchResults.processed;
-        stats.successful += batchResults.successful;
-        stats.errors += batchResults.errors;
-        stats.duplicates += batchResults.duplicates;
-        stats.updated += batchResults.updated;
-
-        const now = Date.now();
-        if (now - lastProgressUpdate >= this.progressUpdateInterval) {
-          await storage.updateImportJob(jobId, {
-            processedRows: stats.processed,
-            successfulRows: stats.successful,
-            errorRows: stats.errors,
-            duplicateRows: stats.duplicates,
-          });
-          lastProgressUpdate = now;
-        }
-      }
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       await storage.updateImportJob(jobId, {
         status: 'completed',
@@ -119,15 +158,67 @@ export class CompanyCSVProcessor {
         errors: this.errorAccumulator.length > 0 ? this.errorAccumulator : null,
       });
 
-      console.log(`🏢 Company import completed:`, stats);
+      // Broadcast completion via WebSocket
+      wsHub.broadcastComplete(jobId, {
+        totalRows: totalRows - 1,
+        processedRows: stats.processed,
+        successfulRows: stats.successful,
+        errorRows: stats.errors,
+        duplicateRows: stats.duplicates,
+        updatedRows: stats.updated,
+        message: `Company import completed in ${duration}s: ${stats.successful} created, ${stats.updated} updated, ${stats.duplicates} duplicates, ${stats.errors} errors`,
+        completedAt: new Date().toISOString()
+      });
+
+      console.log(`🏢 Company import completed in ${duration}s:`, stats);
+
     } catch (error) {
       console.error('Company CSV processing error:', error);
+      
       await storage.updateImportJob(jobId, {
         status: 'failed',
         errors: [{ message: String(error) }],
+        completedAt: new Date(),
       });
+
+      // Broadcast error via WebSocket
+      wsHub.broadcastError(jobId, error instanceof Error ? error.message : 'Processing failed', {
+        processedRows: stats.processed,
+        successfulRows: stats.successful,
+        errorRows: stats.errors,
+        duplicateRows: stats.duplicates,
+      });
+
       throw error;
+    } finally {
+      this.duplicateCache.clear();
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // Ignore cleanup errors
+      }
     }
+  }
+
+  private broadcastProgress(jobId: string, stats: CompanyProcessingStats, totalRows: number): void {
+    const now = Date.now();
+    if (now - this.lastProgressBroadcast < this.progressBroadcastInterval) {
+      return;
+    }
+    this.lastProgressBroadcast = now;
+
+    const percent = totalRows > 0 ? Math.round((stats.processed / totalRows) * 100) : 0;
+    
+    wsHub.broadcast(jobId, {
+      status: 'processing',
+      totalRows,
+      processedRows: stats.processed,
+      successfulRows: stats.successful,
+      errorRows: stats.errors,
+      duplicateRows: stats.duplicates,
+      updatedRows: stats.updated,
+      message: `Processing companies... ${percent}% complete (${stats.processed}/${totalRows})`
+    });
   }
 
   private async processBatchOptimized(
@@ -167,7 +258,6 @@ export class CompanyCSVProcessor {
           if (options.updateExisting) {
             toUpdate.push({ id: isDuplicate.id, data: transformedRecord });
             stats.updated++;
-            stats.successful++;
           } else {
             stats.duplicates++;
           }
@@ -187,18 +277,25 @@ export class CompanyCSVProcessor {
 
     if (toInsert.length > 0) {
       try {
-        const insertedCount = await this.bulkInsertCompanies(toInsert);
-        stats.successful += insertedCount;
+        const result = await storage.bulkInsertCompaniesOptimized(toInsert as InsertCompany[]);
+        stats.successful += result.inserted;
       } catch (error: any) {
-        stats.errors += toInsert.length;
-        console.error('Bulk insert error:', error);
+        // Fallback to individual inserts
+        for (const company of toInsert) {
+          try {
+            await storage.createCompany(company as InsertCompany);
+            stats.successful++;
+          } catch {
+            stats.errors++;
+          }
+        }
       }
     }
 
     if (toUpdate.length > 0) {
       await Promise.all(
         toUpdate.map(({ id, data }) => 
-          this.updateExistingCompany(id, data).catch(() => {})
+          storage.updateCompany(id, data).catch(() => {})
         )
       );
     }
@@ -237,33 +334,6 @@ export class CompanyCSVProcessor {
     if (record.name) {
       this.duplicateCache.set(`name:${record.name.toLowerCase().trim()}`, { id: tempId });
     }
-  }
-
-  private async bulkInsertCompanies(companies: Partial<InsertCompany>[]): Promise<number> {
-    if (companies.length === 0) return 0;
-
-    try {
-      const result = await storage.bulkInsertCompaniesOptimized(companies as InsertCompany[]);
-      return result.inserted;
-    } catch (error) {
-      console.error('Bulk insert failed, falling back to individual inserts:', error);
-      let inserted = 0;
-      for (const company of companies) {
-        try {
-          await storage.createCompany(company as InsertCompany);
-          inserted++;
-        } catch {
-        }
-      }
-      return inserted;
-    }
-  }
-
-  private async processBatch(
-    batch: any[],
-    options: CompanyProcessingOptions
-  ): Promise<CompanyProcessingStats> {
-    return this.processBatchOptimized(batch, options);
   }
 
   private transformRecord(record: any, fieldMapping: Record<string, string>): Partial<InsertCompany> {
@@ -310,56 +380,6 @@ export class CompanyCSVProcessor {
     }
   }
 
-  private async checkDuplicate(record: Partial<InsertCompany>): Promise<{ id: string } | null> {
-    if (record.domains && record.domains.length > 0) {
-      for (const domain of record.domains) {
-        const cached = this.duplicateCache.get(domain);
-        if (cached) {
-          return { id: cached.id };
-        }
-        
-        const existing = await storage.getCompanyByDomain(domain);
-        if (existing) {
-          this.duplicateCache.set(domain, existing);
-          return { id: existing.id };
-        }
-      }
-    }
-    
-    if (record.name) {
-      const normalizedName = record.name.toLowerCase().trim();
-      const cached = this.duplicateCache.get(`name:${normalizedName}`);
-      if (cached) {
-        return { id: cached.id };
-      }
-      
-      const existing = await storage.getCompanyByName(record.name);
-      if (existing) {
-        this.duplicateCache.set(`name:${normalizedName}`, existing);
-        return { id: existing.id };
-      }
-    }
-    
-    return null;
-  }
-
-  private async insertCompany(record: Partial<InsertCompany>): Promise<void> {
-    const company = await storage.createCompany(record as InsertCompany);
-    
-    if (record.domains && record.domains.length > 0) {
-      for (const domain of record.domains) {
-        this.duplicateCache.set(domain, company);
-      }
-    }
-    if (record.name) {
-      this.duplicateCache.set(`name:${record.name.toLowerCase().trim()}`, company);
-    }
-  }
-
-  private async updateExistingCompany(id: string, record: Partial<InsertCompany>): Promise<void> {
-    await storage.updateCompany(id, record);
-  }
-
   private async preloadDuplicateCache(): Promise<void> {
     this.duplicateCache.clear();
     const { companies } = await storage.getCompanies({ limit: 10000 });
@@ -374,8 +394,6 @@ export class CompanyCSVProcessor {
         this.duplicateCache.set(`name:${company.name.toLowerCase().trim()}`, company);
       }
     }
-    
-    console.log(`📦 Preloaded ${companies.length} companies into duplicate cache`);
   }
 
   private async countCSVRows(filePath: string): Promise<number> {

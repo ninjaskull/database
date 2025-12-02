@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Settings, CheckCircle, AlertCircle, MapPin, Zap, Database } from "lucide-react";
+import { Upload, FileText, Settings, CheckCircle, AlertCircle, MapPin, Zap, Database, Wifi, WifiOff } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { useImportProgress } from "@/lib/ws-import-progress";
 import type { ImportJob } from "@shared/schema";
 
 type ImportStep = 'upload' | 'mapping' | 'options' | 'progress' | 'complete';
@@ -95,6 +96,28 @@ export function SmartImportWizard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // WebSocket-based real-time progress tracking with polling fallback
+  const wsProgress = useImportProgress({
+    jobId: step === 'progress' ? jobId : null,
+    onComplete: () => {
+      setStep('complete');
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+      toast({
+        title: "Import complete",
+        description: `Successfully imported contacts`,
+      });
+    },
+    onError: (event) => {
+      toast({
+        title: "Import failed",
+        description: event.message || "An error occurred during import",
+        variant: "destructive",
+      });
+    },
+    fallbackPollingInterval: 1500,
+  });
+
+  // Also keep the query for the complete step to show final stats
   const { data: importJob } = useQuery<ImportJob>({
     queryKey: ['import', jobId],
     queryFn: async () => {
@@ -102,9 +125,16 @@ export function SmartImportWizard() {
       if (!response.ok) throw new Error('Failed to fetch import status');
       return response.json();
     },
-    enabled: !!jobId && step === 'progress',
-    refetchInterval: 1000,
+    enabled: !!jobId && (step === 'complete' || (step === 'progress' && !wsProgress.isConnected)),
+    refetchInterval: step === 'progress' ? 2000 : false,
   });
+
+  // Transition to complete step when WebSocket reports completion
+  useEffect(() => {
+    if (wsProgress.isComplete && step === 'progress') {
+      setStep('complete');
+    }
+  }, [wsProgress.isComplete, step]);
 
   const autoMapMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -246,6 +276,16 @@ export function SmartImportWizard() {
   };
 
   if (step === 'complete') {
+    // Prefer WebSocket data if it has any progress, fallback to importJob
+    // Use WS data if it has processed any rows OR if WS shows complete status
+    const useWsData = wsProgress.processedRows > 0 || wsProgress.status === 'completed';
+    const completeData = useWsData ? {
+      successfulRows: wsProgress.successfulRows,
+      duplicateRows: wsProgress.duplicateRows,
+      errorRows: wsProgress.errorRows,
+      totalRows: wsProgress.totalRows,
+    } : importJob;
+
     return (
       <Card className="w-full max-w-4xl mx-auto">
         <CardHeader className="text-center">
@@ -255,27 +295,27 @@ export function SmartImportWizard() {
           <CardTitle className="text-2xl">Import Complete!</CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
-          {importJob && (
+          {completeData && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{importJob.successfulRows || 0}</div>
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg" data-testid="complete-imported">
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{completeData.successfulRows || 0}</div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">Imported</div>
               </div>
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{importJob.duplicateRows || 0}</div>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg" data-testid="complete-duplicates">
+                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{completeData.duplicateRows || 0}</div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">Duplicates</div>
               </div>
-              <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-red-600 dark:text-red-400">{importJob.errorRows || 0}</div>
+              <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg" data-testid="complete-errors">
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">{completeData.errorRows || 0}</div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">Errors</div>
               </div>
-              <div className="bg-gray-50 dark:bg-gray-900/20 p-4 rounded-lg">
-                <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">{importJob.totalRows || 0}</div>
+              <div className="bg-gray-50 dark:bg-gray-900/20 p-4 rounded-lg" data-testid="complete-total">
+                <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">{completeData.totalRows || 0}</div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">Total</div>
               </div>
             </div>
           )}
-          <Button onClick={resetWizard} size="lg">
+          <Button onClick={resetWizard} size="lg" data-testid="button-import-another">
             Import Another File
           </Button>
         </CardContent>
@@ -284,8 +324,18 @@ export function SmartImportWizard() {
   }
 
   if (step === 'progress') {
-    const progress = importJob && importJob.processedRows && importJob.totalRows 
-      ? Math.round((importJob.processedRows / importJob.totalRows) * 100) 
+    // Use WebSocket progress data if available, fallback to importJob
+    const progressData = wsProgress.processedRows > 0 ? {
+      totalRows: wsProgress.totalRows,
+      processedRows: wsProgress.processedRows,
+      successfulRows: wsProgress.successfulRows,
+      duplicateRows: wsProgress.duplicateRows,
+      errorRows: wsProgress.errorRows,
+      message: wsProgress.message,
+    } : importJob;
+    
+    const progressPercent = progressData && progressData.processedRows && progressData.totalRows 
+      ? Math.round((progressData.processedRows / progressData.totalRows) * 100) 
       : 0;
     
     return (
@@ -295,32 +345,48 @@ export function SmartImportWizard() {
             <Database className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           <CardTitle className="text-2xl">Processing Import</CardTitle>
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+            {wsProgress.isConnected ? (
+              <>
+                <Wifi className="w-4 h-4 text-green-500" />
+                <span>Real-time updates active</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-4 h-4 text-gray-400" />
+                <span>Using polling updates</span>
+              </>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span>Progress</span>
-              <span>{progress}%</span>
+              <span>{progressPercent}%</span>
             </div>
-            <Progress value={progress} className="h-3" />
+            <Progress value={progressPercent} className="h-3" />
+            {wsProgress.message && (
+              <p className="text-sm text-gray-500 text-center mt-2">{wsProgress.message}</p>
+            )}
           </div>
           
-          {importJob && (
+          {progressData && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-lg font-semibold">{importJob.processedRows || 0}</div>
+              <div className="text-center" data-testid="progress-processed">
+                <div className="text-lg font-semibold">{progressData.processedRows || 0}</div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">Processed</div>
               </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-green-600">{importJob.successfulRows || 0}</div>
+              <div className="text-center" data-testid="progress-success">
+                <div className="text-lg font-semibold text-green-600">{progressData.successfulRows || 0}</div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">Success</div>
               </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-yellow-600">{importJob.duplicateRows || 0}</div>
+              <div className="text-center" data-testid="progress-duplicates">
+                <div className="text-lg font-semibold text-yellow-600">{progressData.duplicateRows || 0}</div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">Duplicates</div>
               </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-red-600">{importJob.errorRows || 0}</div>
+              <div className="text-center" data-testid="progress-errors">
+                <div className="text-lg font-semibold text-red-600">{progressData.errorRows || 0}</div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">Errors</div>
               </div>
             </div>

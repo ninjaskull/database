@@ -93,6 +93,12 @@ export interface IStorage {
   deleteContact(id: string): Promise<boolean>;
   bulkDeleteContacts(ids: string[]): Promise<number>;
   
+  // Optimized bulk operations for fast imports
+  bulkInsertContactsOptimized(contacts: InsertContact[]): Promise<Contact[]>;
+  bulkUpdateContactsOptimized(updates: Map<string, Partial<InsertContact>>): Promise<number>;
+  bulkFindDuplicatesByEmails(emails: string[]): Promise<Map<string, Contact>>;
+  bulkCreateContactActivities(activities: InsertContactActivity[]): Promise<number>;
+  
   // Duplicate detection
   findDuplicateContacts(email: string, company?: string): Promise<Contact[]>;
   findFuzzyDuplicateContacts(email?: string, fullName?: string, company?: string): Promise<Contact[]>;
@@ -871,6 +877,119 @@ export class DatabaseStorage implements IStorage {
     }
     
     return deletedCount;
+  }
+
+  /**
+   * Optimized bulk insert contacts - uses batch database operations
+   * Returns created contacts without individual activity logging for speed
+   */
+  async bulkInsertContactsOptimized(contactList: InsertContact[]): Promise<Contact[]> {
+    if (contactList.length === 0) return [];
+
+    try {
+      // Prepare all contacts with generated full names
+      const preparedContacts = contactList.map(contact => ({
+        ...contact,
+        fullName: generateFullName(contact.firstName, contact.lastName, contact.fullName),
+        updatedAt: new Date(),
+      }));
+
+      // Single bulk insert operation
+      const createdContacts = await db
+        .insert(contacts)
+        .values(preparedContacts)
+        .returning();
+
+      return createdContacts;
+    } catch (error) {
+      console.error('Bulk insert contacts error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Optimized bulk update contacts - uses parallel updates
+   * Updates is a Map of contactId -> partial updates
+   */
+  async bulkUpdateContactsOptimized(updates: Map<string, Partial<InsertContact>>): Promise<number> {
+    if (updates.size === 0) return 0;
+
+    let updatedCount = 0;
+    const updateEntries = Array.from(updates.entries());
+
+    // Process updates in parallel chunks
+    const chunkSize = 50;
+    for (let i = 0; i < updateEntries.length; i += chunkSize) {
+      const chunk = updateEntries.slice(i, i + chunkSize);
+      
+      const updatePromises = chunk.map(async ([id, updateData]) => {
+        try {
+          const [updated] = await db
+            .update(contacts)
+            .set({
+              ...updateData,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(contacts.id, id), eq(contacts.isDeleted, false)))
+            .returning({ id: contacts.id });
+          
+          return updated ? 1 : 0;
+        } catch (error) {
+          console.error(`Failed to update contact ${id}:`, error);
+          return 0;
+        }
+      });
+
+      const results = await Promise.all(updatePromises);
+      updatedCount += results.reduce((sum: number, count: number) => sum + count, 0);
+    }
+
+    return updatedCount;
+  }
+
+  /**
+   * Bulk find duplicates by email - optimized single query
+   */
+  async bulkFindDuplicatesByEmails(emails: string[]): Promise<Map<string, Contact>> {
+    if (emails.length === 0) return new Map();
+
+    const lowercaseEmails = emails.map(e => e.toLowerCase());
+    
+    const foundContacts = await db
+      .select()
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        sql`LOWER(${contacts.email}) = ANY(${lowercaseEmails})`
+      ));
+
+    const duplicateMap = new Map<string, Contact>();
+    for (const contact of foundContacts) {
+      if (contact.email) {
+        duplicateMap.set(contact.email.toLowerCase(), contact);
+      }
+    }
+
+    return duplicateMap;
+  }
+
+  /**
+   * Bulk create contact activities - optimized batch insert
+   */
+  async bulkCreateContactActivities(activities: InsertContactActivity[]): Promise<number> {
+    if (activities.length === 0) return 0;
+
+    try {
+      const result = await db
+        .insert(contactActivities)
+        .values(activities)
+        .returning({ id: contactActivities.id });
+      
+      return result.length;
+    } catch (error) {
+      console.error('Bulk create activities error:', error);
+      return 0;
+    }
   }
 
   async findDuplicateContacts(email: string, company?: string): Promise<Contact[]> {

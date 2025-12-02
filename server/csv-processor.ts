@@ -1,6 +1,6 @@
 /**
  * Ultra-Fast CSV Processing Engine
- * Features: Streaming, Worker Threads, Bulk Operations, Smart Batching, Memory Optimization
+ * Features: True Streaming, Bulk Operations, Smart Batching, WebSocket Progress Broadcasting
  */
 
 import { Transform, pipeline } from 'stream';
@@ -10,8 +10,8 @@ import csv from 'csv-parser';
 import { storage } from './storage';
 import { enrichContactData } from '../client/src/lib/data-enrichment';
 import { csvFieldMapper } from './nlp-mapper';
-import { insertContactSchema } from '@shared/schema';
-import { z } from 'zod';
+import { insertContactSchema, type InsertContact, type InsertContactActivity } from '@shared/schema';
+import { wsHub } from './ws-hub';
 
 const pipelineAsync = promisify(pipeline);
 
@@ -38,12 +38,14 @@ interface ContactBatch {
 }
 
 export class AdvancedCSVProcessor {
-  private batchSize = 100; // Optimized batch size
+  private batchSize = 500; // Optimized batch size for performance
   private duplicateCache = new Map<string, any>();
   private errorAccumulator: any[] = [];
+  private lastProgressBroadcast = 0;
+  private progressBroadcastInterval = 100; // Broadcast every 100ms max
 
   /**
-   * Process CSV file with advanced streaming and batching
+   * Process CSV file with true streaming - processes batches on the fly
    */
   async processCSVAdvanced(
     filePath: string,
@@ -58,6 +60,9 @@ export class AdvancedCSVProcessor {
       updated: 0
     };
 
+    const startTime = Date.now();
+    this.errorAccumulator = [];
+
     try {
       // Pre-load duplicate detection cache for performance
       await this.preloadDuplicateCache();
@@ -71,25 +76,80 @@ export class AdvancedCSVProcessor {
         processedRows: 0,
       });
 
-      // Create processing pipeline
-      const batches: any[][] = [];
-      let currentBatch: any[] = [];
+      // Broadcast initial status via WebSocket
+      wsHub.broadcast(jobId, {
+        status: 'processing',
+        totalRows: totalRows - 1,
+        processedRows: 0,
+        successfulRows: 0,
+        errorRows: 0,
+        duplicateRows: 0,
+        message: 'Starting import...'
+      }, true);
 
-      const batchProcessor = new Transform({
+      // True streaming: process batches on the fly without accumulating in memory
+      let currentBatch: any[] = [];
+      let batchIndex = 0;
+      let lastDbUpdate = Date.now();
+      const dbUpdateInterval = 2000; // Update DB every 2 seconds
+
+      const streamProcessor = new Transform({
         objectMode: true,
-        transform: (record: any, encoding, callback) => {
+        transform: async (record: any, encoding, callback) => {
           currentBatch.push(record);
           
           if (currentBatch.length >= this.batchSize) {
-            batches.push([...currentBatch]);
-            currentBatch = [];
+            try {
+              // Process batch immediately instead of accumulating
+              const batchResult = await this.processBatchOptimized([...currentBatch], options);
+              
+              stats.processed += batchResult.processed;
+              stats.successful += batchResult.successful;
+              stats.errors += batchResult.errors;
+              stats.duplicates += batchResult.duplicates;
+              stats.updated += batchResult.updated;
+
+              // Broadcast progress via WebSocket
+              this.broadcastProgress(jobId, stats, totalRows - 1, false);
+
+              // Update database periodically
+              const now = Date.now();
+              if (now - lastDbUpdate >= dbUpdateInterval) {
+                await storage.updateImportJob(jobId, {
+                  processedRows: stats.processed,
+                  successfulRows: stats.successful,
+                  errorRows: stats.errors,
+                  duplicateRows: stats.duplicates,
+                });
+                lastDbUpdate = now;
+              }
+
+              batchIndex++;
+              currentBatch = [];
+            } catch (error) {
+              console.error('Batch processing error:', error);
+              stats.errors += currentBatch.length;
+              currentBatch = [];
+            }
           }
           
           callback();
         },
-        flush: (callback) => {
+        flush: async (callback) => {
+          // Process remaining records in the last batch
           if (currentBatch.length > 0) {
-            batches.push([...currentBatch]);
+            try {
+              const batchResult = await this.processBatchOptimized([...currentBatch], options);
+              
+              stats.processed += batchResult.processed;
+              stats.successful += batchResult.successful;
+              stats.errors += batchResult.errors;
+              stats.duplicates += batchResult.duplicates;
+              stats.updated += batchResult.updated;
+            } catch (error) {
+              console.error('Final batch processing error:', error);
+              stats.errors += currentBatch.length;
+            }
           }
           callback();
         }
@@ -99,33 +159,10 @@ export class AdvancedCSVProcessor {
       await pipelineAsync(
         fs.createReadStream(filePath, { encoding: 'utf8' }),
         csv(),
-        batchProcessor
+        streamProcessor
       );
 
-      // Process batches in parallel with controlled concurrency
-      const batchPromises = batches.map(async (batch, batchIndex) => {
-        return this.processBatch(batch, options, batchIndex);
-      });
-
-      // Process batches with controlled parallelism (max 3 concurrent batches)
-      const batchResults = await this.processBatchesWithLimit(batchPromises, 3);
-
-      // Aggregate results
-      for (const batchResult of batchResults) {
-        stats.processed += batchResult.processed;
-        stats.successful += batchResult.successful;
-        stats.errors += batchResult.errors;
-        stats.duplicates += batchResult.duplicates;
-        stats.updated += batchResult.updated;
-
-        // Update progress in real-time
-        await storage.updateImportJob(jobId, {
-          processedRows: stats.processed,
-          successfulRows: stats.successful,
-          errorRows: stats.errors,
-          duplicateRows: stats.duplicates,
-        });
-      }
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       // Final status update
       await storage.updateImportJob(jobId, {
@@ -137,14 +174,27 @@ export class AdvancedCSVProcessor {
         completedAt: new Date(),
         errors: this.errorAccumulator.length > 0 ? {
           summary: `${this.errorAccumulator.length} validation/processing errors`,
-          details: this.errorAccumulator.slice(0, 100) // Limit error details
+          details: this.errorAccumulator.slice(0, 100)
         } : null
       });
 
-      console.log(`✅ Import completed: ${stats.successful} successful, ${stats.errors} errors, ${stats.duplicates} duplicates, ${stats.updated} updated`);
+      // Broadcast completion via WebSocket
+      wsHub.broadcastComplete(jobId, {
+        totalRows: totalRows - 1,
+        processedRows: stats.processed,
+        successfulRows: stats.successful,
+        errorRows: stats.errors,
+        duplicateRows: stats.duplicates,
+        updatedRows: stats.updated,
+        message: `Import completed in ${duration}s: ${stats.successful} created, ${stats.updated} updated, ${stats.duplicates} duplicates, ${stats.errors} errors`,
+        completedAt: new Date().toISOString()
+      });
+
+      console.log(`✅ Import completed in ${duration}s: ${stats.successful} created, ${stats.updated} updated, ${stats.duplicates} duplicates, ${stats.errors} errors`);
 
     } catch (error) {
       console.error('CSV Processing Error:', error);
+      
       await storage.updateImportJob(jobId, {
         status: 'failed',
         errors: { 
@@ -153,24 +203,57 @@ export class AdvancedCSVProcessor {
         },
         completedAt: new Date(),
       });
+
+      // Broadcast error via WebSocket
+      wsHub.broadcastError(jobId, error instanceof Error ? error.message : 'Processing failed', {
+        processedRows: stats.processed,
+        successfulRows: stats.successful,
+        errorRows: stats.errors,
+        duplicateRows: stats.duplicates,
+      });
+
       throw error;
     } finally {
       // Cleanup
+      this.duplicateCache.clear();
       try {
         fs.unlinkSync(filePath);
       } catch (e) {
-        console.warn('Failed to cleanup temp file:', e);
+        // Ignore cleanup errors
       }
     }
   }
 
   /**
-   * Process a batch of contacts with optimized database operations
+   * Broadcast progress with throttling to avoid flooding WebSocket
    */
-  private async processBatch(
+  private broadcastProgress(jobId: string, stats: ProcessingStats, totalRows: number, force: boolean): void {
+    const now = Date.now();
+    if (!force && now - this.lastProgressBroadcast < this.progressBroadcastInterval) {
+      return;
+    }
+    this.lastProgressBroadcast = now;
+
+    const percent = totalRows > 0 ? Math.round((stats.processed / totalRows) * 100) : 0;
+    
+    wsHub.broadcast(jobId, {
+      status: 'processing',
+      totalRows,
+      processedRows: stats.processed,
+      successfulRows: stats.successful,
+      errorRows: stats.errors,
+      duplicateRows: stats.duplicates,
+      updatedRows: stats.updated,
+      message: `Processing... ${percent}% complete (${stats.processed}/${totalRows})`
+    });
+  }
+
+  /**
+   * Process batch with optimized bulk database operations
+   */
+  private async processBatchOptimized(
     rawBatch: any[],
-    options: ProcessingOptions,
-    batchIndex: number
+    options: ProcessingOptions
   ): Promise<ProcessingStats> {
     const stats: ProcessingStats = {
       processed: 0,
@@ -182,38 +265,93 @@ export class AdvancedCSVProcessor {
 
     try {
       // Transform and validate batch
-      const validatedBatch = await this.validateAndTransformBatch(rawBatch, options.fieldMapping);
+      const validatedBatch = this.validateAndTransformBatch(rawBatch, options.fieldMapping);
       
-      // Separate into new contacts, duplicates, and updates
-      const batchData = await this.categorizeBatch(validatedBatch, options);
-
-      // Bulk operations
-      if (batchData.contacts.length > 0) {
-        const createdContacts = await this.bulkCreateContacts(batchData.contacts, options.autoEnrich);
-        stats.successful += createdContacts.length;
+      // Get all emails for duplicate check
+      const emails = validatedBatch.map(c => c.email).filter((e): e is string => !!e);
+      
+      // Bulk duplicate detection
+      const existingContacts = await storage.bulkFindDuplicatesByEmails(emails);
+      
+      // Categorize contacts
+      const newContacts: InsertContact[] = [];
+      const updates = new Map<string, Partial<InsertContact>>();
+      
+      for (const contact of validatedBatch) {
+        const cacheKey = contact.email?.toLowerCase() || `${contact.fullName}:${contact.company}`;
         
-        // Log activities in bulk
-        await this.bulkLogActivities(createdContacts, 'created', 'Contact imported from CSV');
+        // Check cache first, then database results
+        let existing = this.duplicateCache.get(cacheKey);
+        if (!existing && contact.email) {
+          existing = existingContacts.get(contact.email.toLowerCase());
+        }
+
+        if (existing) {
+          if (options.updateExisting) {
+            const updateData = this.extractUpdateData(contact, existing);
+            if (Object.keys(updateData).length > 0) {
+              updates.set(existing.id, updateData);
+            } else {
+              stats.duplicates++;
+            }
+          } else {
+            stats.duplicates++;
+          }
+        } else {
+          newContacts.push(contact);
+          this.duplicateCache.set(cacheKey, contact);
+        }
       }
 
-      // Bulk updates
-      if (batchData.updates.size > 0 && options.updateExisting) {
-        const updatedCount = await this.bulkUpdateContacts(batchData.updates, options.autoEnrich);
+      // Bulk insert new contacts
+      if (newContacts.length > 0) {
+        // Apply enrichment in parallel if enabled
+        const contactsToInsert = options.autoEnrich
+          ? await Promise.all(newContacts.map(c => enrichContactData(c)))
+          : newContacts;
+
+        try {
+          const created = await storage.bulkInsertContactsOptimized(contactsToInsert);
+          stats.successful += created.length;
+
+          // Bulk create activities (fire and forget for speed)
+          const activities: InsertContactActivity[] = created.map(c => ({
+            contactId: c.id,
+            activityType: 'created',
+            description: 'Contact imported from CSV'
+          }));
+          storage.bulkCreateContactActivities(activities).catch(() => {});
+        } catch (error) {
+          // If bulk insert fails, it might be due to duplicate constraints
+          // Fall back to individual inserts for this batch
+          for (const contact of contactsToInsert) {
+            try {
+              await storage.createContactWithAutoFill(contact);
+              stats.successful++;
+            } catch (e) {
+              stats.errors++;
+              this.errorAccumulator.push({
+                contact: contact.fullName || contact.email,
+                error: e instanceof Error ? e.message : 'Creation failed'
+              });
+            }
+          }
+        }
+      }
+
+      // Bulk update existing contacts
+      if (updates.size > 0) {
+        const updatedCount = await storage.bulkUpdateContactsOptimized(updates);
         stats.updated += updatedCount;
       }
 
-      stats.duplicates += batchData.duplicates.size;
       stats.processed = rawBatch.length;
 
-      console.log(`📦 Batch ${batchIndex}: ${stats.successful} created, ${stats.updated} updated, ${stats.duplicates} duplicates, ${stats.errors} errors`);
-
     } catch (error) {
-      console.error(`❌ Batch ${batchIndex} failed:`, error);
+      console.error('Batch processing error:', error);
       stats.errors = rawBatch.length;
       this.errorAccumulator.push({
-        batch: batchIndex,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
 
@@ -221,22 +359,18 @@ export class AdvancedCSVProcessor {
   }
 
   /**
-   * Validate and transform batch with Zod schema
+   * Validate and transform batch with Zod schema - optimized for speed
    */
-  private async validateAndTransformBatch(rawBatch: any[], fieldMapping: Record<string, string>): Promise<any[]> {
-    const validatedBatch: any[] = [];
+  private validateAndTransformBatch(rawBatch: any[], fieldMapping: Record<string, string>): InsertContact[] {
+    const validatedBatch: InsertContact[] = [];
 
     for (const rawRecord of rawBatch) {
       try {
         const contactData: any = {};
 
-        // Apply field mapping with debugging
-        console.log('🔍 Processing record with mapping:', fieldMapping);
-        console.log('📝 Raw record:', rawRecord);
-        
+        // Apply field mapping
         Object.entries(rawRecord).forEach(([csvHeader, value]) => {
           const dbField = fieldMapping[csvHeader];
-          console.log(`📋 Mapping: "${csvHeader}" -> "${dbField}" = "${value}"`);
           
           if (dbField && value !== null && value !== undefined && value.toString().trim() !== '') {
             // Handle special field types
@@ -248,7 +382,6 @@ export class AdvancedCSVProcessor {
               const numValue = parseInt(value.toString().replace(/[^\d]/g, ''));
               if (!isNaN(numValue)) contactData[dbField] = numValue;
             } else if (dbField === 'annualRevenue' || dbField === 'leadScore') {
-              // Handle decimal fields - keep as string for Drizzle decimal type
               const cleanValue = value.toString().replace(/[^\d.-]/g, '');
               if (cleanValue && !isNaN(parseFloat(cleanValue))) {
                 contactData[dbField] = cleanValue;
@@ -258,47 +391,34 @@ export class AdvancedCSVProcessor {
             }
           }
         });
-        
-        console.log('✅ Transformed contact data:', contactData);
 
-        // More lenient validation - only require email OR (firstName OR lastName OR fullName)
+        // Lenient validation - require email OR name
         const hasName = contactData.fullName || contactData.firstName || contactData.lastName;
         const hasEmail = contactData.email;
         
         if (!hasName && !hasEmail) {
-          console.log('❌ Skipping record - missing both name and email:', contactData);
           this.errorAccumulator.push({
             record: rawRecord,
-            error: 'Missing both name (fullName/firstName/lastName) and email - at least one is required',
-            timestamp: new Date().toISOString()
+            error: 'Missing both name and email'
           });
           continue;
         }
 
-        // Generate fullName if missing using the same logic as storage
+        // Generate fullName if missing
         if (!contactData.fullName && (contactData.firstName || contactData.lastName)) {
           const first = contactData.firstName?.trim() || '';
           const last = contactData.lastName?.trim() || '';
-          
-          if (first && last) {
-            contactData.fullName = `${first} ${last}`;
-          } else if (first) {
-            contactData.fullName = first;
-          } else if (last) {
-            contactData.fullName = last;
-          }
+          contactData.fullName = [first, last].filter(Boolean).join(' ');
         }
 
-        // Final validation with Zod
+        // Validate with Zod
         const validated = insertContactSchema.parse(contactData);
         validatedBatch.push(validated);
 
       } catch (error) {
-        console.log('❌ Validation error for record:', rawRecord, 'Error:', error);
         this.errorAccumulator.push({
           record: rawRecord,
-          error: error instanceof Error ? error.message : 'Validation failed',
-          timestamp: new Date().toISOString()
+          error: error instanceof Error ? error.message : 'Validation failed'
         });
       }
     }
@@ -307,187 +427,21 @@ export class AdvancedCSVProcessor {
   }
 
   /**
-   * Categorize batch into new, duplicates, and updates
-   */
-  private async categorizeBatch(validatedBatch: any[], options: ProcessingOptions): Promise<ContactBatch> {
-    const result: ContactBatch = {
-      contacts: [],
-      duplicates: new Map(),
-      updates: new Map()
-    };
-
-    // Batch duplicate detection queries
-    const emails = validatedBatch.map(c => c.email).filter(Boolean);
-    const emailDuplicates = emails.length > 0 
-      ? await this.bulkFindDuplicatesByEmail(emails)
-      : new Map();
-
-    for (const contact of validatedBatch) {
-      let existingContact = null;
-
-      // Check cache first
-      const cacheKey = contact.email || `${contact.fullName}:${contact.company}`;
-      if (this.duplicateCache.has(cacheKey)) {
-        existingContact = this.duplicateCache.get(cacheKey);
-      } else if (contact.email && emailDuplicates.has(contact.email)) {
-        existingContact = emailDuplicates.get(contact.email);
-      }
-
-      if (existingContact) {
-        if (options.updateExisting) {
-          // Check if we have new data to update
-          const updateData = this.extractUpdateData(contact, existingContact);
-          if (Object.keys(updateData).length > 0) {
-            result.updates.set(existingContact.id, updateData);
-          } else {
-            result.duplicates.set(cacheKey, existingContact);
-          }
-        } else {
-          result.duplicates.set(cacheKey, existingContact);
-        }
-      } else {
-        result.contacts.push(contact);
-        // Cache new contact to avoid duplicate processing
-        this.duplicateCache.set(cacheKey, contact);
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Bulk create contacts with enrichment
-   */
-  private async bulkCreateContacts(contacts: any[], autoEnrich: boolean): Promise<any[]> {
-    if (contacts.length === 0) return [];
-
-    // Parallel enrichment
-    const enrichedContacts = autoEnrich 
-      ? await Promise.all(contacts.map(contact => enrichContactData(contact)))
-      : contacts;
-
-    // Bulk insert with transaction
-    const createdContacts: any[] = [];
-    
-    // Process in smaller chunks to avoid overwhelming the database
-    const chunkSize = 50;
-    for (let i = 0; i < enrichedContacts.length; i += chunkSize) {
-      const chunk = enrichedContacts.slice(i, i + chunkSize);
-      
-      for (const contact of chunk) {
-        try {
-          const created = await storage.createContactWithAutoFill(contact);
-          createdContacts.push(created);
-        } catch (error) {
-          console.error('Failed to create contact:', error);
-          this.errorAccumulator.push({
-            contact: contact.fullName || contact.email,
-            error: error instanceof Error ? error.message : 'Creation failed',
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
-    }
-
-    return createdContacts;
-  }
-
-  /**
-   * Bulk update contacts
-   */
-  private async bulkUpdateContacts(updates: Map<string, any>, autoEnrich: boolean): Promise<number> {
-    let updatedCount = 0;
-
-    for (const [contactId, updateData] of Array.from(updates.entries())) {
-      try {
-        const enrichedUpdate = autoEnrich 
-          ? await enrichContactData(updateData)
-          : updateData;
-
-        await storage.updateContact(contactId, enrichedUpdate);
-        updatedCount++;
-
-      } catch (error) {
-        console.error('Failed to update contact:', error);
-        this.errorAccumulator.push({
-          contactId,
-          error: error instanceof Error ? error.message : 'Update failed',
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-
-    return updatedCount;
-  }
-
-  /**
-   * Bulk log activities for performance
-   */
-  private async bulkLogActivities(contacts: any[], activityType: string, description: string): Promise<void> {
-    const activities = contacts.map(contact => ({
-      contactId: contact.id,
-      activityType,
-      description
-    }));
-
-    // Process activities in chunks
-    const chunkSize = 100;
-    for (let i = 0; i < activities.length; i += chunkSize) {
-      const chunk = activities.slice(i, i + chunkSize);
-      
-      try {
-        await Promise.all(
-          chunk.map(activity => storage.createContactActivity(activity))
-        );
-      } catch (error) {
-        console.error('Failed to log activities:', error);
-      }
-    }
-  }
-
-  /**
-   * Bulk find duplicates by email for performance
-   */
-  private async bulkFindDuplicatesByEmail(emails: string[]): Promise<Map<string, any>> {
-    const duplicates = new Map();
-
-    // Process emails in batches to avoid overwhelming queries
-    const batchSize = 50;
-    for (let i = 0; i < emails.length; i += batchSize) {
-      const emailBatch = emails.slice(i, i + batchSize);
-      
-      for (const email of emailBatch) {
-        try {
-          const found = await storage.findDuplicateContacts(email);
-          if (found.length > 0) {
-            duplicates.set(email, found[0]);
-          }
-        } catch (error) {
-          console.error('Duplicate detection failed for email:', email, error);
-        }
-      }
-    }
-
-    return duplicates;
-  }
-
-  /**
    * Pre-load duplicate cache for performance
    */
   private async preloadDuplicateCache(): Promise<void> {
     try {
-      // Load recent contacts (last 10k) into cache for fast duplicate detection
       const { contacts } = await storage.getContacts({ limit: 10000, sortBy: 'createdAt' });
       
       for (const contact of contacts) {
         if (contact.email) {
-          this.duplicateCache.set(contact.email, contact);
+          this.duplicateCache.set(contact.email.toLowerCase(), contact);
         }
-        const nameCompanyKey = `${contact.fullName}:${contact.company}`;
-        this.duplicateCache.set(nameCompanyKey, contact);
+        if (contact.fullName && contact.company) {
+          const nameCompanyKey = `${contact.fullName}:${contact.company}`;
+          this.duplicateCache.set(nameCompanyKey, contact);
+        }
       }
-
-      console.log(`📚 Loaded ${contacts.length} contacts into duplicate detection cache`);
     } catch (error) {
       console.error('Failed to preload duplicate cache:', error);
     }
@@ -524,24 +478,6 @@ export class AdvancedCSVProcessor {
     });
 
     return updateData;
-  }
-
-  /**
-   * Process batches with controlled parallelism
-   */
-  private async processBatchesWithLimit<T>(
-    promises: Promise<T>[],
-    limit: number
-  ): Promise<T[]> {
-    const results: T[] = [];
-    
-    for (let i = 0; i < promises.length; i += limit) {
-      const batch = promises.slice(i, i + limit);
-      const batchResults = await Promise.all(batch);
-      results.push(...batchResults);
-    }
-
-    return results;
   }
 }
 
