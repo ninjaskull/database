@@ -1919,6 +1919,180 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============ DATABASE MANAGEMENT & DATA QUALITY ROUTES ============
+
+  // Get database health summary
+  app.get("/api/database/health", requireAuth, async (req, res) => {
+    try {
+      const health = await storage.getDatabaseHealthSummary();
+      res.json({ success: true, data: health });
+    } catch (error) {
+      console.error("Get database health error:", error);
+      res.status(500).json({ success: false, message: "Failed to get database health" });
+    }
+  });
+
+  // Capture metrics snapshot
+  app.post("/api/database/metrics/snapshot", requireAuth, async (req, res) => {
+    try {
+      const metrics = await storage.captureMetricsSnapshot();
+      res.json({ success: true, data: metrics });
+    } catch (error) {
+      console.error("Capture metrics snapshot error:", error);
+      res.status(500).json({ success: false, message: "Failed to capture metrics snapshot" });
+    }
+  });
+
+  // Get latest metrics
+  app.get("/api/database/metrics/latest", requireAuth, async (req, res) => {
+    try {
+      const metrics = await storage.getLatestMetrics();
+      res.json({ success: true, data: metrics || null });
+    } catch (error) {
+      console.error("Get latest metrics error:", error);
+      res.status(500).json({ success: false, message: "Failed to get latest metrics" });
+    }
+  });
+
+  // Get metrics history
+  app.get("/api/database/metrics/history", requireAuth, async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const metrics = await storage.getMetricsHistory(days);
+      res.json({ success: true, data: metrics });
+    } catch (error) {
+      console.error("Get metrics history error:", error);
+      res.status(500).json({ success: false, message: "Failed to get metrics history" });
+    }
+  });
+
+  // Run data quality checks
+  app.post("/api/database/quality/check", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.runDataQualityChecks();
+      res.json({ success: true, data: result });
+    } catch (error) {
+      console.error("Run data quality checks error:", error);
+      res.status(500).json({ success: false, message: "Failed to run data quality checks" });
+    }
+  });
+
+  // Get data quality issues
+  app.get("/api/database/quality/issues", requireAuth, async (req, res) => {
+    try {
+      const { entityType, severity, status, page, limit } = req.query;
+      const result = await storage.getDataQualityIssues({
+        entityType: entityType as string,
+        severity: severity as string,
+        status: status as string,
+        page: page ? parseInt(page as string) : 1,
+        limit: limit ? parseInt(limit as string) : 20
+      });
+      res.json({ success: true, data: result.issues, total: result.total });
+    } catch (error) {
+      console.error("Get data quality issues error:", error);
+      res.status(500).json({ success: false, message: "Failed to get data quality issues" });
+    }
+  });
+
+  // Resolve data quality issue
+  app.patch("/api/database/quality/issues/:id/resolve", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const issue = await storage.resolveDataQualityIssue(req.params.id, userId);
+      if (issue) {
+        res.json({ success: true, data: issue });
+      } else {
+        res.status(404).json({ success: false, message: "Issue not found" });
+      }
+    } catch (error) {
+      console.error("Resolve data quality issue error:", error);
+      res.status(500).json({ success: false, message: "Failed to resolve issue" });
+    }
+  });
+
+  // Ignore data quality issue
+  app.patch("/api/database/quality/issues/:id/ignore", requireAuth, async (req, res) => {
+    try {
+      const issue = await storage.updateDataQualityIssue(req.params.id, { status: 'ignored' });
+      if (issue) {
+        res.json({ success: true, data: issue });
+      } else {
+        res.status(404).json({ success: false, message: "Issue not found" });
+      }
+    } catch (error) {
+      console.error("Ignore data quality issue error:", error);
+      res.status(500).json({ success: false, message: "Failed to ignore issue" });
+    }
+  });
+
+  // Get audit logs
+  app.get("/api/database/audit", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await storage.getRecentAuditLogs(limit);
+      res.json({ success: true, data: logs });
+    } catch (error) {
+      console.error("Get audit logs error:", error);
+      res.status(500).json({ success: false, message: "Failed to get audit logs" });
+    }
+  });
+
+  // Get audit history for specific entity
+  app.get("/api/database/audit/:entityType/:entityId", requireAuth, async (req, res) => {
+    try {
+      const { entityType, entityId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const logs = await storage.getAuditHistory(entityType, entityId, limit);
+      res.json({ success: true, data: logs });
+    } catch (error) {
+      console.error("Get entity audit history error:", error);
+      res.status(500).json({ success: false, message: "Failed to get audit history" });
+    }
+  });
+
+  // Get archived records
+  app.get("/api/database/archive", requireAuth, async (req, res) => {
+    try {
+      const { entityType, page, limit } = req.query;
+      const result = await storage.getArchivedRecords(
+        entityType as string,
+        page ? parseInt(page as string) : 1,
+        limit ? parseInt(limit as string) : 20
+      );
+      res.json({ success: true, data: result.records, total: result.total });
+    } catch (error) {
+      console.error("Get archived records error:", error);
+      res.status(500).json({ success: false, message: "Failed to get archived records" });
+    }
+  });
+
+  // Restore archived record
+  app.post("/api/database/archive/:id/restore", requireAuth, async (req, res) => {
+    try {
+      const restored = await storage.restoreArchivedRecord(req.params.id);
+      if (restored) {
+        res.json({ success: true, data: restored });
+      } else {
+        res.status(404).json({ success: false, message: "Archived record not found" });
+      }
+    } catch (error) {
+      console.error("Restore archived record error:", error);
+      res.status(500).json({ success: false, message: "Failed to restore record" });
+    }
+  });
+
+  // Cleanup expired archives
+  app.post("/api/database/archive/cleanup", requireAuth, async (req, res) => {
+    try {
+      const deleted = await storage.cleanupExpiredArchives();
+      res.json({ success: true, message: `Cleaned up ${deleted} expired archives` });
+    } catch (error) {
+      console.error("Cleanup expired archives error:", error);
+      res.status(500).json({ success: false, message: "Failed to cleanup archives" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

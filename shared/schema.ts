@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, decimal, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, decimal, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -65,7 +65,15 @@ export const companies = pgTable("companies", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   isDeleted: boolean("is_deleted").default(false),
-});
+}, (table) => [
+  index("companies_name_idx").on(table.name),
+  index("companies_industry_idx").on(table.industry),
+  index("companies_country_idx").on(table.country),
+  index("companies_is_deleted_idx").on(table.isDeleted),
+  index("companies_created_at_idx").on(table.createdAt),
+  index("companies_data_quality_score_idx").on(table.dataQualityScore),
+  index("companies_employee_size_bracket_idx").on(table.employeeSizeBracket),
+]);
 
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -123,7 +131,20 @@ export const contacts = pgTable("contacts", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   isDeleted: boolean("is_deleted").default(false),
-});
+}, (table) => [
+  index("contacts_email_idx").on(table.email),
+  index("contacts_email_domain_idx").on(table.emailDomain),
+  index("contacts_company_id_idx").on(table.companyId),
+  index("contacts_company_match_status_idx").on(table.companyMatchStatus),
+  index("contacts_company_idx").on(table.company),
+  index("contacts_industry_idx").on(table.industry),
+  index("contacts_country_idx").on(table.country),
+  index("contacts_employee_size_bracket_idx").on(table.employeeSizeBracket),
+  index("contacts_is_deleted_idx").on(table.isDeleted),
+  index("contacts_created_at_idx").on(table.createdAt),
+  index("contacts_lead_score_idx").on(table.leadScore),
+  index("contacts_full_name_idx").on(table.fullName),
+]);
 
 export const contactActivities = pgTable("contact_activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -132,7 +153,11 @@ export const contactActivities = pgTable("contact_activities", {
   description: text("description").notNull(),
   changes: jsonb("changes"), // Store what changed
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("contact_activities_contact_id_idx").on(table.contactId),
+  index("contact_activities_activity_type_idx").on(table.activityType),
+  index("contact_activities_created_at_idx").on(table.createdAt),
+]);
 
 export const importJobs = pgTable("import_jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -147,7 +172,10 @@ export const importJobs = pgTable("import_jobs", {
   errors: jsonb("errors"),
   createdAt: timestamp("created_at").defaultNow(),
   completedAt: timestamp("completed_at"),
-});
+}, (table) => [
+  index("import_jobs_status_idx").on(table.status),
+  index("import_jobs_created_at_idx").on(table.createdAt),
+]);
 
 // User authentication table
 export const users = pgTable("users", {
@@ -157,7 +185,9 @@ export const users = pgTable("users", {
   name: text("name"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("users_created_at_idx").on(table.createdAt),
+]);
 
 // Session storage table
 export const sessions = pgTable("sessions", {
@@ -166,7 +196,10 @@ export const sessions = pgTable("sessions", {
   token: text("token").unique().notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("sessions_user_id_idx").on(table.userId),
+  index("sessions_expires_at_idx").on(table.expiresAt),
+]);
 
 // LinkedIn enrichment jobs table - tracks enrichment requests
 export const enrichmentJobs = pgTable("enrichment_jobs", {
@@ -189,7 +222,11 @@ export const enrichmentJobs = pgTable("enrichment_jobs", {
   
   createdAt: timestamp("created_at").defaultNow(),
   completedAt: timestamp("completed_at"),
-});
+}, (table) => [
+  index("enrichment_jobs_contact_id_idx").on(table.contactId),
+  index("enrichment_jobs_status_idx").on(table.status),
+  index("enrichment_jobs_created_at_idx").on(table.createdAt),
+]);
 
 // API Keys table - for public API authentication
 export const apiKeys = pgTable("api_keys", {
@@ -203,7 +240,11 @@ export const apiKeys = pgTable("api_keys", {
   lastUsedAt: timestamp("last_used_at"),
   createdAt: timestamp("created_at").defaultNow(),
   revokedAt: timestamp("revoked_at"),
-});
+}, (table) => [
+  index("api_keys_owner_user_id_idx").on(table.ownerUserId),
+  index("api_keys_created_at_idx").on(table.createdAt),
+  index("api_keys_revoked_at_idx").on(table.revokedAt),
+]);
 
 // Tags table - for categorizing contacts
 export const tags = pgTable("tags", {
@@ -214,7 +255,10 @@ export const tags = pgTable("tags", {
   ownerUserId: varchar("owner_user_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("tags_owner_user_id_idx").on(table.ownerUserId),
+  index("tags_name_idx").on(table.name),
+]);
 
 // Contact-Tag junction table for many-to-many relationship
 export const contactTags = pgTable("contact_tags", {
@@ -222,7 +266,11 @@ export const contactTags = pgTable("contact_tags", {
   contactId: varchar("contact_id").references(() => contacts.id).notNull(),
   tagId: varchar("tag_id").references(() => tags.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("contact_tags_contact_id_idx").on(table.contactId),
+  index("contact_tags_tag_id_idx").on(table.tagId),
+  uniqueIndex("contact_tags_unique_idx").on(table.contactId, table.tagId),
+]);
 
 // API request logs for audit trail
 export const apiRequestLogs = pgTable("api_request_logs", {
@@ -238,7 +286,120 @@ export const apiRequestLogs = pgTable("api_request_logs", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("api_request_logs_api_key_id_idx").on(table.apiKeyId),
+  index("api_request_logs_created_at_idx").on(table.createdAt),
+  index("api_request_logs_status_code_idx").on(table.statusCode),
+  index("api_request_logs_trace_id_idx").on(table.traceId),
+]);
+
+// ============ ENHANCED AUDIT & DATA QUALITY TABLES ============
+
+// Data change audit log - tracks all changes to critical entities
+export const dataChangeAudit = pgTable("data_change_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityType: text("entity_type").notNull(), // 'contact', 'company', 'tag', etc.
+  entityId: varchar("entity_id").notNull(),
+  operation: text("operation").notNull(), // 'create', 'update', 'delete', 'restore'
+  userId: varchar("user_id").references(() => users.id),
+  previousData: jsonb("previous_data"), // Snapshot before change
+  newData: jsonb("new_data"), // Snapshot after change
+  changedFields: text("changed_fields").array(), // List of fields that changed
+  changeSource: text("change_source").default("manual"), // 'manual', 'import', 'api', 'enrichment', 'system'
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("data_change_audit_entity_type_idx").on(table.entityType),
+  index("data_change_audit_entity_id_idx").on(table.entityId),
+  index("data_change_audit_operation_idx").on(table.operation),
+  index("data_change_audit_user_id_idx").on(table.userId),
+  index("data_change_audit_created_at_idx").on(table.createdAt),
+  index("data_change_audit_change_source_idx").on(table.changeSource),
+]);
+
+// Data quality issues tracker
+export const dataQualityIssues = pgTable("data_quality_issues", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityType: text("entity_type").notNull(), // 'contact', 'company'
+  entityId: varchar("entity_id").notNull(),
+  issueType: text("issue_type").notNull(), // 'missing_email', 'invalid_phone', 'duplicate', 'incomplete', 'stale'
+  severity: text("severity").notNull().default("medium"), // 'low', 'medium', 'high', 'critical'
+  description: text("description").notNull(),
+  fieldName: text("field_name"), // Which field has the issue
+  suggestedValue: text("suggested_value"), // Auto-suggested fix if available
+  status: text("status").notNull().default("open"), // 'open', 'resolved', 'ignored', 'in_progress'
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("data_quality_issues_entity_type_idx").on(table.entityType),
+  index("data_quality_issues_entity_id_idx").on(table.entityId),
+  index("data_quality_issues_issue_type_idx").on(table.issueType),
+  index("data_quality_issues_severity_idx").on(table.severity),
+  index("data_quality_issues_status_idx").on(table.status),
+  index("data_quality_issues_created_at_idx").on(table.createdAt),
+]);
+
+// Database metrics snapshots - for tracking growth and health over time
+export const databaseMetrics = pgTable("database_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  snapshotDate: timestamp("snapshot_date").notNull(),
+  
+  // Table counts
+  totalContacts: integer("total_contacts").default(0),
+  activeContacts: integer("active_contacts").default(0),
+  deletedContacts: integer("deleted_contacts").default(0),
+  totalCompanies: integer("total_companies").default(0),
+  activeCompanies: integer("active_companies").default(0),
+  
+  // Match statistics
+  matchedContacts: integer("matched_contacts").default(0),
+  unmatchedContacts: integer("unmatched_contacts").default(0),
+  pendingReviewContacts: integer("pending_review_contacts").default(0),
+  
+  // Data quality metrics
+  contactsWithEmail: integer("contacts_with_email").default(0),
+  contactsWithPhone: integer("contacts_with_phone").default(0),
+  contactsWithLinkedIn: integer("contacts_with_linkedin").default(0),
+  companiesWithDomain: integer("companies_with_domain").default(0),
+  
+  // Activity metrics
+  importsToday: integer("imports_today").default(0),
+  enrichmentsToday: integer("enrichments_today").default(0),
+  apiRequestsToday: integer("api_requests_today").default(0),
+  
+  // Data quality scores
+  avgContactQualityScore: decimal("avg_contact_quality_score", { precision: 5, scale: 2 }),
+  avgCompanyQualityScore: decimal("avg_company_quality_score", { precision: 5, scale: 2 }),
+  
+  // Open issues count
+  openDataQualityIssues: integer("open_data_quality_issues").default(0),
+  criticalIssues: integer("critical_issues").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("database_metrics_snapshot_date_idx").on(table.snapshotDate),
+]);
+
+// Archived records - for storing soft-deleted records before permanent deletion
+export const archivedRecords = pgTable("archived_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityType: text("entity_type").notNull(), // 'contact', 'company'
+  originalId: varchar("original_id").notNull(),
+  data: jsonb("data").notNull(), // Full record snapshot
+  deletedBy: varchar("deleted_by").references(() => users.id),
+  deletedAt: timestamp("deleted_at").notNull(),
+  retentionDays: integer("retention_days").default(90),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("archived_records_entity_type_idx").on(table.entityType),
+  index("archived_records_original_id_idx").on(table.originalId),
+  index("archived_records_expires_at_idx").on(table.expiresAt),
+  index("archived_records_deleted_at_idx").on(table.deletedAt),
+]);
 
 // Relations
 export const companiesRelations = relations(companies, ({ many }) => ({
@@ -365,6 +526,29 @@ export const insertApiRequestLogSchema = createInsertSchema(apiRequestLogs).omit
   createdAt: true,
 });
 
+// New audit and data quality schemas
+export const insertDataChangeAuditSchema = createInsertSchema(dataChangeAudit).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertDataQualityIssueSchema = createInsertSchema(dataQualityIssues).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  resolvedAt: true,
+});
+
+export const insertDatabaseMetricsSchema = createInsertSchema(databaseMetrics).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertArchivedRecordSchema = createInsertSchema(archivedRecords).omit({
+  id: true,
+  createdAt: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -406,3 +590,13 @@ export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
 export type InsertApiRequestLog = z.infer<typeof insertApiRequestLogSchema>;
 export type LinkedinEnrichmentRequest = z.infer<typeof linkedinEnrichmentRequestSchema>;
 export type LoginCredentials = z.infer<typeof loginSchema>;
+
+// New audit and data quality types
+export type DataChangeAudit = typeof dataChangeAudit.$inferSelect;
+export type InsertDataChangeAudit = z.infer<typeof insertDataChangeAuditSchema>;
+export type DataQualityIssue = typeof dataQualityIssues.$inferSelect;
+export type InsertDataQualityIssue = z.infer<typeof insertDataQualityIssueSchema>;
+export type DatabaseMetrics = typeof databaseMetrics.$inferSelect;
+export type InsertDatabaseMetrics = z.infer<typeof insertDatabaseMetricsSchema>;
+export type ArchivedRecord = typeof archivedRecords.$inferSelect;
+export type InsertArchivedRecord = z.infer<typeof insertArchivedRecordSchema>;

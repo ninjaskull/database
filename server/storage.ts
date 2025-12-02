@@ -10,6 +10,10 @@ import {
   contactTags,
   apiRequestLogs,
   companies,
+  dataChangeAudit,
+  dataQualityIssues,
+  databaseMetrics,
+  archivedRecords,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -32,7 +36,15 @@ import {
   type InsertApiRequestLog,
   type Company,
   type InsertCompany,
-  type InsertProspect
+  type InsertProspect,
+  type DataChangeAudit,
+  type InsertDataChangeAudit,
+  type DataQualityIssue,
+  type InsertDataQualityIssue,
+  type DatabaseMetrics,
+  type InsertDatabaseMetrics,
+  type ArchivedRecord,
+  type InsertArchivedRecord,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
@@ -162,6 +174,46 @@ export interface IStorage {
   // User operations
   getUserById(id: string): Promise<User | undefined>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  
+  // ============ DATA MANAGEMENT & AUDIT OPERATIONS ============
+  
+  // Audit logging
+  logDataChange(audit: InsertDataChangeAudit): Promise<DataChangeAudit>;
+  getAuditHistory(entityType: string, entityId: string, limit?: number): Promise<DataChangeAudit[]>;
+  getRecentAuditLogs(limit?: number): Promise<DataChangeAudit[]>;
+  
+  // Data quality issues
+  createDataQualityIssue(issue: InsertDataQualityIssue): Promise<DataQualityIssue>;
+  getDataQualityIssues(params: {
+    entityType?: string;
+    severity?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ issues: DataQualityIssue[], total: number }>;
+  updateDataQualityIssue(id: string, updates: Partial<DataQualityIssue>): Promise<DataQualityIssue | undefined>;
+  resolveDataQualityIssue(id: string, userId: string): Promise<DataQualityIssue | undefined>;
+  runDataQualityChecks(): Promise<{ issuesFound: number; issuesCreated: number }>;
+  
+  // Database metrics
+  captureMetricsSnapshot(): Promise<DatabaseMetrics>;
+  getLatestMetrics(): Promise<DatabaseMetrics | undefined>;
+  getMetricsHistory(days?: number): Promise<DatabaseMetrics[]>;
+  
+  // Archive operations
+  archiveRecord(entityType: string, originalId: string, data: any, userId?: string): Promise<ArchivedRecord>;
+  getArchivedRecords(entityType?: string, page?: number, limit?: number): Promise<{ records: ArchivedRecord[], total: number }>;
+  restoreArchivedRecord(id: string): Promise<any>;
+  cleanupExpiredArchives(): Promise<number>;
+  
+  // Data health dashboard
+  getDatabaseHealthSummary(): Promise<{
+    totalRecords: { contacts: number; companies: number; };
+    dataQuality: { score: number; issuesByType: Record<string, number>; };
+    matchingStatus: { matched: number; unmatched: number; pendingReview: number; };
+    growthMetrics: { contactsThisWeek: number; companiesThisWeek: number; };
+    recentActivity: { imports: number; enrichments: number; apiRequests: number; };
+  }>;
 }
 
 // Utility function to generate full name from first and last name
@@ -1969,6 +2021,482 @@ export class DatabaseStorage implements IStorage {
       .values(log)
       .returning();
     return requestLog;
+  }
+
+  // ============ DATA MANAGEMENT & AUDIT OPERATIONS ============
+
+  // Audit logging
+  async logDataChange(audit: InsertDataChangeAudit): Promise<DataChangeAudit> {
+    const [log] = await db
+      .insert(dataChangeAudit)
+      .values(audit)
+      .returning();
+    return log;
+  }
+
+  async getAuditHistory(entityType: string, entityId: string, limit: number = 50): Promise<DataChangeAudit[]> {
+    return await db
+      .select()
+      .from(dataChangeAudit)
+      .where(and(
+        eq(dataChangeAudit.entityType, entityType),
+        eq(dataChangeAudit.entityId, entityId)
+      ))
+      .orderBy(desc(dataChangeAudit.createdAt))
+      .limit(limit);
+  }
+
+  async getRecentAuditLogs(limit: number = 100): Promise<DataChangeAudit[]> {
+    return await db
+      .select()
+      .from(dataChangeAudit)
+      .orderBy(desc(dataChangeAudit.createdAt))
+      .limit(limit);
+  }
+
+  // Data quality issues
+  async createDataQualityIssue(issue: InsertDataQualityIssue): Promise<DataQualityIssue> {
+    const [newIssue] = await db
+      .insert(dataQualityIssues)
+      .values(issue)
+      .returning();
+    return newIssue;
+  }
+
+  async getDataQualityIssues(params: {
+    entityType?: string;
+    severity?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ issues: DataQualityIssue[], total: number }> {
+    const { entityType, severity, status = 'open', page = 1, limit = 20 } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (entityType) conditions.push(eq(dataQualityIssues.entityType, entityType));
+    if (severity) conditions.push(eq(dataQualityIssues.severity, severity));
+    if (status) conditions.push(eq(dataQualityIssues.status, status));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [{ count: total }] = await db
+      .select({ count: count() })
+      .from(dataQualityIssues)
+      .where(whereClause);
+
+    const issues = await db
+      .select()
+      .from(dataQualityIssues)
+      .where(whereClause)
+      .orderBy(desc(dataQualityIssues.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { issues, total };
+  }
+
+  async updateDataQualityIssue(id: string, updates: Partial<DataQualityIssue>): Promise<DataQualityIssue | undefined> {
+    const [issue] = await db
+      .update(dataQualityIssues)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(dataQualityIssues.id, id))
+      .returning();
+    return issue || undefined;
+  }
+
+  async resolveDataQualityIssue(id: string, userId: string): Promise<DataQualityIssue | undefined> {
+    const [issue] = await db
+      .update(dataQualityIssues)
+      .set({
+        status: 'resolved',
+        resolvedBy: userId,
+        resolvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(dataQualityIssues.id, id))
+      .returning();
+    return issue || undefined;
+  }
+
+  async runDataQualityChecks(): Promise<{ issuesFound: number; issuesCreated: number }> {
+    let issuesFound = 0;
+    let issuesCreated = 0;
+
+    // Check for contacts missing email
+    const contactsMissingEmail = await db
+      .select({ id: contacts.id, fullName: contacts.fullName })
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        or(isNull(contacts.email), eq(contacts.email, ''))
+      ))
+      .limit(1000);
+
+    for (const contact of contactsMissingEmail) {
+      issuesFound++;
+      const existing = await db
+        .select()
+        .from(dataQualityIssues)
+        .where(and(
+          eq(dataQualityIssues.entityType, 'contact'),
+          eq(dataQualityIssues.entityId, contact.id),
+          eq(dataQualityIssues.issueType, 'missing_email'),
+          eq(dataQualityIssues.status, 'open')
+        ))
+        .limit(1);
+
+      if (existing.length === 0) {
+        await this.createDataQualityIssue({
+          entityType: 'contact',
+          entityId: contact.id,
+          issueType: 'missing_email',
+          severity: 'high',
+          description: `Contact "${contact.fullName}" is missing an email address`,
+          fieldName: 'email'
+        });
+        issuesCreated++;
+      }
+    }
+
+    // Check for contacts missing phone
+    const contactsMissingPhone = await db
+      .select({ id: contacts.id, fullName: contacts.fullName })
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        or(isNull(contacts.mobilePhone), eq(contacts.mobilePhone, '')),
+        or(isNull(contacts.corporatePhone), eq(contacts.corporatePhone, ''))
+      ))
+      .limit(1000);
+
+    for (const contact of contactsMissingPhone) {
+      issuesFound++;
+      const existing = await db
+        .select()
+        .from(dataQualityIssues)
+        .where(and(
+          eq(dataQualityIssues.entityType, 'contact'),
+          eq(dataQualityIssues.entityId, contact.id),
+          eq(dataQualityIssues.issueType, 'missing_phone'),
+          eq(dataQualityIssues.status, 'open')
+        ))
+        .limit(1);
+
+      if (existing.length === 0) {
+        await this.createDataQualityIssue({
+          entityType: 'contact',
+          entityId: contact.id,
+          issueType: 'missing_phone',
+          severity: 'medium',
+          description: `Contact "${contact.fullName}" is missing phone numbers`,
+          fieldName: 'mobilePhone'
+        });
+        issuesCreated++;
+      }
+    }
+
+    // Check for unmatched contacts
+    const unmatchedContacts = await db
+      .select({ id: contacts.id, fullName: contacts.fullName, company: contacts.company })
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        or(
+          eq(contacts.companyMatchStatus, 'unmatched'),
+          isNull(contacts.companyMatchStatus)
+        ),
+        isNotNull(contacts.company)
+      ))
+      .limit(500);
+
+    for (const contact of unmatchedContacts) {
+      issuesFound++;
+      const existing = await db
+        .select()
+        .from(dataQualityIssues)
+        .where(and(
+          eq(dataQualityIssues.entityType, 'contact'),
+          eq(dataQualityIssues.entityId, contact.id),
+          eq(dataQualityIssues.issueType, 'unmatched_company'),
+          eq(dataQualityIssues.status, 'open')
+        ))
+        .limit(1);
+
+      if (existing.length === 0) {
+        await this.createDataQualityIssue({
+          entityType: 'contact',
+          entityId: contact.id,
+          issueType: 'unmatched_company',
+          severity: 'low',
+          description: `Contact "${contact.fullName}" has company "${contact.company}" but is not matched to a company record`,
+          fieldName: 'companyId'
+        });
+        issuesCreated++;
+      }
+    }
+
+    return { issuesFound, issuesCreated };
+  }
+
+  // Database metrics
+  async captureMetricsSnapshot(): Promise<DatabaseMetrics> {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Total contacts
+    const [totalContactsResult] = await db.select({ count: count() }).from(contacts);
+    const [activeContactsResult] = await db.select({ count: count() }).from(contacts).where(eq(contacts.isDeleted, false));
+    const [deletedContactsResult] = await db.select({ count: count() }).from(contacts).where(eq(contacts.isDeleted, true));
+
+    // Total companies
+    const [totalCompaniesResult] = await db.select({ count: count() }).from(companies);
+    const [activeCompaniesResult] = await db.select({ count: count() }).from(companies).where(eq(companies.isDeleted, false));
+
+    // Match statistics
+    const [matchedResult] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), eq(contacts.companyMatchStatus, 'matched')));
+    const [unmatchedResult] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), or(eq(contacts.companyMatchStatus, 'unmatched'), isNull(contacts.companyMatchStatus))));
+    const [pendingResult] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), eq(contacts.companyMatchStatus, 'pending_review')));
+
+    // Data quality metrics
+    const [withEmailResult] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), isNotNull(contacts.email), ne(contacts.email, '')));
+    const [withPhoneResult] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), or(isNotNull(contacts.mobilePhone), isNotNull(contacts.corporatePhone))));
+    const [withLinkedInResult] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), isNotNull(contacts.personLinkedIn)));
+    const [withDomainResult] = await db.select({ count: count() }).from(companies).where(and(eq(companies.isDeleted, false), sql`array_length(${companies.domains}, 1) > 0`));
+
+    // Activity metrics (today)
+    const [importsTodayResult] = await db.select({ count: count() }).from(importJobs).where(sql`${importJobs.createdAt} >= ${today}`);
+    const [enrichmentsTodayResult] = await db.select({ count: count() }).from(enrichmentJobs).where(sql`${enrichmentJobs.createdAt} >= ${today}`);
+    const [apiRequestsTodayResult] = await db.select({ count: count() }).from(apiRequestLogs).where(sql`${apiRequestLogs.createdAt} >= ${today}`);
+
+    // Open issues
+    const [openIssuesResult] = await db.select({ count: count() }).from(dataQualityIssues).where(eq(dataQualityIssues.status, 'open'));
+    const [criticalIssuesResult] = await db.select({ count: count() }).from(dataQualityIssues).where(and(eq(dataQualityIssues.status, 'open'), eq(dataQualityIssues.severity, 'critical')));
+
+    // Calculate quality scores
+    const activeCount = activeContactsResult.count;
+    const withEmail = withEmailResult.count;
+    const withPhone = withPhoneResult.count;
+    const withLinkedIn = withLinkedInResult.count;
+    
+    const contactQualityScore = activeCount > 0 
+      ? ((Number(withEmail) * 0.4 + Number(withPhone) * 0.3 + Number(withLinkedIn) * 0.3) / Number(activeCount)) * 100
+      : 0;
+
+    const activeCompanyCount = activeCompaniesResult.count;
+    const companiesWithDomain = withDomainResult.count;
+    const companyQualityScore = activeCompanyCount > 0
+      ? (Number(companiesWithDomain) / Number(activeCompanyCount)) * 100
+      : 0;
+
+    const [metrics] = await db
+      .insert(databaseMetrics)
+      .values({
+        snapshotDate: now,
+        totalContacts: totalContactsResult.count,
+        activeContacts: activeContactsResult.count,
+        deletedContacts: deletedContactsResult.count,
+        totalCompanies: totalCompaniesResult.count,
+        activeCompanies: activeCompaniesResult.count,
+        matchedContacts: matchedResult.count,
+        unmatchedContacts: unmatchedResult.count,
+        pendingReviewContacts: pendingResult.count,
+        contactsWithEmail: withEmailResult.count,
+        contactsWithPhone: withPhoneResult.count,
+        contactsWithLinkedIn: withLinkedInResult.count,
+        companiesWithDomain: withDomainResult.count,
+        importsToday: importsTodayResult.count,
+        enrichmentsToday: enrichmentsTodayResult.count,
+        apiRequestsToday: apiRequestsTodayResult.count,
+        avgContactQualityScore: contactQualityScore.toFixed(2),
+        avgCompanyQualityScore: companyQualityScore.toFixed(2),
+        openDataQualityIssues: openIssuesResult.count,
+        criticalIssues: criticalIssuesResult.count
+      })
+      .returning();
+
+    return metrics;
+  }
+
+  async getLatestMetrics(): Promise<DatabaseMetrics | undefined> {
+    const [metrics] = await db
+      .select()
+      .from(databaseMetrics)
+      .orderBy(desc(databaseMetrics.snapshotDate))
+      .limit(1);
+    return metrics || undefined;
+  }
+
+  async getMetricsHistory(days: number = 30): Promise<DatabaseMetrics[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    return await db
+      .select()
+      .from(databaseMetrics)
+      .where(sql`${databaseMetrics.snapshotDate} >= ${startDate}`)
+      .orderBy(desc(databaseMetrics.snapshotDate));
+  }
+
+  // Archive operations
+  async archiveRecord(entityType: string, originalId: string, data: any, userId?: string): Promise<ArchivedRecord> {
+    const now = new Date();
+    const retentionDays = 90;
+    const expiresAt = new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000);
+
+    const [archived] = await db
+      .insert(archivedRecords)
+      .values({
+        entityType,
+        originalId,
+        data,
+        deletedBy: userId,
+        deletedAt: now,
+        retentionDays,
+        expiresAt
+      })
+      .returning();
+
+    return archived;
+  }
+
+  async getArchivedRecords(entityType?: string, page: number = 1, limit: number = 20): Promise<{ records: ArchivedRecord[], total: number }> {
+    const offset = (page - 1) * limit;
+    const conditions = entityType ? eq(archivedRecords.entityType, entityType) : undefined;
+
+    const [{ count: total }] = await db
+      .select({ count: count() })
+      .from(archivedRecords)
+      .where(conditions);
+
+    const records = await db
+      .select()
+      .from(archivedRecords)
+      .where(conditions)
+      .orderBy(desc(archivedRecords.deletedAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { records, total };
+  }
+
+  async restoreArchivedRecord(id: string): Promise<any> {
+    const [archived] = await db
+      .select()
+      .from(archivedRecords)
+      .where(eq(archivedRecords.id, id));
+
+    if (!archived) return null;
+
+    // Restore based on entity type
+    if (archived.entityType === 'contact') {
+      const [restored] = await db
+        .insert(contacts)
+        .values({ ...(archived.data as any), isDeleted: false })
+        .returning();
+
+      await db.delete(archivedRecords).where(eq(archivedRecords.id, id));
+      return restored;
+    }
+
+    if (archived.entityType === 'company') {
+      const [restored] = await db
+        .insert(companies)
+        .values({ ...(archived.data as any), isDeleted: false })
+        .returning();
+
+      await db.delete(archivedRecords).where(eq(archivedRecords.id, id));
+      return restored;
+    }
+
+    return null;
+  }
+
+  async cleanupExpiredArchives(): Promise<number> {
+    const now = new Date();
+    const result = await db
+      .delete(archivedRecords)
+      .where(sql`${archivedRecords.expiresAt} <= ${now}`)
+      .returning();
+
+    return result.length;
+  }
+
+  // Data health dashboard
+  async getDatabaseHealthSummary(): Promise<{
+    totalRecords: { contacts: number; companies: number; };
+    dataQuality: { score: number; issuesByType: Record<string, number>; };
+    matchingStatus: { matched: number; unmatched: number; pendingReview: number; };
+    growthMetrics: { contactsThisWeek: number; companiesThisWeek: number; };
+    recentActivity: { imports: number; enrichments: number; apiRequests: number; };
+  }> {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Total records
+    const [contactsCount] = await db.select({ count: count() }).from(contacts).where(eq(contacts.isDeleted, false));
+    const [companiesCount] = await db.select({ count: count() }).from(companies).where(eq(companies.isDeleted, false));
+
+    // Matching status
+    const [matched] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), eq(contacts.companyMatchStatus, 'matched')));
+    const [unmatched] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), or(eq(contacts.companyMatchStatus, 'unmatched'), isNull(contacts.companyMatchStatus))));
+    const [pendingReview] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), eq(contacts.companyMatchStatus, 'pending_review')));
+
+    // Data quality metrics
+    const [withEmail] = await db.select({ count: count() }).from(contacts).where(and(eq(contacts.isDeleted, false), isNotNull(contacts.email), ne(contacts.email, '')));
+    const totalContacts = Number(contactsCount.count);
+    const emailRate = totalContacts > 0 ? (Number(withEmail.count) / totalContacts) * 100 : 0;
+
+    // Issues by type
+    const issuesByTypeResult = await db
+      .select({ 
+        issueType: dataQualityIssues.issueType, 
+        count: count() 
+      })
+      .from(dataQualityIssues)
+      .where(eq(dataQualityIssues.status, 'open'))
+      .groupBy(dataQualityIssues.issueType);
+
+    const issuesByType: Record<string, number> = {};
+    for (const row of issuesByTypeResult) {
+      issuesByType[row.issueType] = Number(row.count);
+    }
+
+    // Growth metrics
+    const [contactsThisWeek] = await db.select({ count: count() }).from(contacts).where(sql`${contacts.createdAt} >= ${oneWeekAgo}`);
+    const [companiesThisWeek] = await db.select({ count: count() }).from(companies).where(sql`${companies.createdAt} >= ${oneWeekAgo}`);
+
+    // Recent activity (last 7 days)
+    const [imports] = await db.select({ count: count() }).from(importJobs).where(sql`${importJobs.createdAt} >= ${oneWeekAgo}`);
+    const [enrichments] = await db.select({ count: count() }).from(enrichmentJobs).where(sql`${enrichmentJobs.createdAt} >= ${oneWeekAgo}`);
+    const [apiRequests] = await db.select({ count: count() }).from(apiRequestLogs).where(sql`${apiRequestLogs.createdAt} >= ${oneWeekAgo}`);
+
+    return {
+      totalRecords: {
+        contacts: Number(contactsCount.count),
+        companies: Number(companiesCount.count)
+      },
+      dataQuality: {
+        score: Math.round(emailRate),
+        issuesByType
+      },
+      matchingStatus: {
+        matched: Number(matched.count),
+        unmatched: Number(unmatched.count),
+        pendingReview: Number(pendingReview.count)
+      },
+      growthMetrics: {
+        contactsThisWeek: Number(contactsThisWeek.count),
+        companiesThisWeek: Number(companiesThisWeek.count)
+      },
+      recentActivity: {
+        imports: Number(imports.count),
+        enrichments: Number(enrichments.count),
+        apiRequests: Number(apiRequests.count)
+      }
+    };
   }
 }
 

@@ -9,6 +9,7 @@ const navigation = [
   { name: 'Import Data', href: '/import', icon: 'fas fa-upload' },
   { name: 'LinkedIn Search', href: '/linkedin-search', icon: 'fab fa-linkedin' },
   { name: 'Analytics', href: '/analytics', icon: 'fas fa-chart-bar' },
+  { name: 'Database', href: '/database', icon: 'fas fa-database' },
   { name: 'Settings', href: '/settings', icon: 'fas fa-cog' },
 ];
 

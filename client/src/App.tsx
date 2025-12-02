@@ -11,6 +11,7 @@ import ImportPage from "@/pages/import";
 import SettingsPage from "@/pages/settings";
 import Analytics from "@/pages/analytics";
 import LinkedInSearch from "@/pages/linkedin-search";
+import DatabaseManagement from "@/pages/database-management";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import { useAuth } from "@/hooks/useAuth";
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/import" component={ImportPage} />
       <Route path="/linkedin-search" component={LinkedInSearch} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/database" component={DatabaseManagement} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
