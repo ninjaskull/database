@@ -295,6 +295,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get missing company domains (domains from contacts without company data)
+  app.get("/api/companies/missing-domains", requireAuth, async (req, res) => {
+    try {
+      const domains = await storage.getMissingCompanyDomains();
+      res.json({ domains, total: domains.length });
+    } catch (error) {
+      console.error('Get missing domains error:', error);
+      res.status(500).json({ message: "Failed to fetch missing domains" });
+    }
+  });
+
   // Get single company
   app.get("/api/companies/:id", requireAuth, async (req, res) => {
     try {

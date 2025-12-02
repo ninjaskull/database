@@ -29,9 +29,10 @@ interface CompanyProcessingOptions {
 }
 
 export class CompanyCSVProcessor {
-  private batchSize = 100;
+  private batchSize = 500;
   private duplicateCache = new Map<string, any>();
   private errorAccumulator: any[] = [];
+  private progressUpdateInterval = 500;
 
   async processCompanyCSV(
     filePath: string,
@@ -86,20 +87,26 @@ export class CompanyCSVProcessor {
         batchProcessor
       );
 
+      let lastProgressUpdate = Date.now();
+      
       for (const batch of batches) {
-        const batchResults = await this.processBatch(batch, options);
+        const batchResults = await this.processBatchOptimized(batch, options);
         stats.processed += batchResults.processed;
         stats.successful += batchResults.successful;
         stats.errors += batchResults.errors;
         stats.duplicates += batchResults.duplicates;
         stats.updated += batchResults.updated;
 
-        await storage.updateImportJob(jobId, {
-          processedRows: stats.processed,
-          successfulRows: stats.successful,
-          errorRows: stats.errors,
-          duplicateRows: stats.duplicates,
-        });
+        const now = Date.now();
+        if (now - lastProgressUpdate >= this.progressUpdateInterval) {
+          await storage.updateImportJob(jobId, {
+            processedRows: stats.processed,
+            successfulRows: stats.successful,
+            errorRows: stats.errors,
+            duplicateRows: stats.duplicates,
+          });
+          lastProgressUpdate = now;
+        }
       }
 
       await storage.updateImportJob(jobId, {
@@ -123,7 +130,7 @@ export class CompanyCSVProcessor {
     }
   }
 
-  private async processBatch(
+  private async processBatchOptimized(
     batch: any[],
     options: CompanyProcessingOptions
   ): Promise<CompanyProcessingStats> {
@@ -134,6 +141,9 @@ export class CompanyCSVProcessor {
       duplicates: 0,
       updated: 0
     };
+
+    const toInsert: Partial<InsertCompany>[] = [];
+    const toUpdate: Array<{ id: string; data: Partial<InsertCompany> }> = [];
 
     for (const record of batch) {
       stats.processed++;
@@ -151,21 +161,19 @@ export class CompanyCSVProcessor {
           continue;
         }
 
-        const isDuplicate = await this.checkDuplicate(transformedRecord);
+        const isDuplicate = this.checkDuplicateInCache(transformedRecord);
         
         if (isDuplicate) {
           if (options.updateExisting) {
-            await this.updateExistingCompany(isDuplicate.id, transformedRecord);
+            toUpdate.push({ id: isDuplicate.id, data: transformedRecord });
             stats.updated++;
             stats.successful++;
-          } else if (options.skipDuplicates) {
-            stats.duplicates++;
           } else {
             stats.duplicates++;
           }
         } else {
-          await this.insertCompany(transformedRecord);
-          stats.successful++;
+          toInsert.push(transformedRecord);
+          this.addToCache(transformedRecord);
         }
       } catch (error: any) {
         stats.errors++;
@@ -177,7 +185,85 @@ export class CompanyCSVProcessor {
       }
     }
 
+    if (toInsert.length > 0) {
+      try {
+        const insertedCount = await this.bulkInsertCompanies(toInsert);
+        stats.successful += insertedCount;
+      } catch (error: any) {
+        stats.errors += toInsert.length;
+        console.error('Bulk insert error:', error);
+      }
+    }
+
+    if (toUpdate.length > 0) {
+      await Promise.all(
+        toUpdate.map(({ id, data }) => 
+          this.updateExistingCompany(id, data).catch(() => {})
+        )
+      );
+    }
+
     return stats;
+  }
+
+  private checkDuplicateInCache(record: Partial<InsertCompany>): { id: string } | null {
+    if (record.domains && record.domains.length > 0) {
+      for (const domain of record.domains) {
+        const cached = this.duplicateCache.get(domain.toLowerCase());
+        if (cached) {
+          return { id: cached.id };
+        }
+      }
+    }
+    
+    if (record.name) {
+      const normalizedName = record.name.toLowerCase().trim();
+      const cached = this.duplicateCache.get(`name:${normalizedName}`);
+      if (cached) {
+        return { id: cached.id };
+      }
+    }
+    
+    return null;
+  }
+
+  private addToCache(record: Partial<InsertCompany>): void {
+    const tempId = `temp_${Date.now()}_${Math.random()}`;
+    if (record.domains && record.domains.length > 0) {
+      for (const domain of record.domains) {
+        this.duplicateCache.set(domain.toLowerCase(), { id: tempId });
+      }
+    }
+    if (record.name) {
+      this.duplicateCache.set(`name:${record.name.toLowerCase().trim()}`, { id: tempId });
+    }
+  }
+
+  private async bulkInsertCompanies(companies: Partial<InsertCompany>[]): Promise<number> {
+    if (companies.length === 0) return 0;
+
+    try {
+      const result = await storage.bulkInsertCompaniesOptimized(companies as InsertCompany[]);
+      return result.inserted;
+    } catch (error) {
+      console.error('Bulk insert failed, falling back to individual inserts:', error);
+      let inserted = 0;
+      for (const company of companies) {
+        try {
+          await storage.createCompany(company as InsertCompany);
+          inserted++;
+        } catch {
+        }
+      }
+      return inserted;
+    }
+  }
+
+  private async processBatch(
+    batch: any[],
+    options: CompanyProcessingOptions
+  ): Promise<CompanyProcessingStats> {
+    return this.processBatchOptimized(batch, options);
   }
 
   private transformRecord(record: any, fieldMapping: Record<string, string>): Partial<InsertCompany> {

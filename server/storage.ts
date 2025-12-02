@@ -53,6 +53,8 @@ export interface IStorage {
   updateCompany(id: string, updates: Partial<InsertCompany>): Promise<Company | undefined>;
   deleteCompany(id: string): Promise<boolean>;
   bulkImportCompanies(companies: InsertCompany[]): Promise<{ imported: number; duplicates: number }>;
+  bulkInsertCompaniesOptimized(companies: InsertCompany[]): Promise<{ inserted: number }>;
+  getMissingCompanyDomains(): Promise<{ domain: string; contactCount: number }[]>;
   
   // Prospect operations with company matching
   createProspect(prospect: InsertProspect): Promise<Contact>;
@@ -314,7 +316,6 @@ export class DatabaseStorage implements IStorage {
     let duplicates = 0;
     
     for (const company of companyList) {
-      // Check for duplicates by domain or name
       let existing: Company | undefined;
       
       if (company.domains && company.domains.length > 0) {
@@ -337,6 +338,66 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { imported, duplicates };
+  }
+
+  async bulkInsertCompaniesOptimized(companyList: InsertCompany[]): Promise<{ inserted: number }> {
+    if (companyList.length === 0) return { inserted: 0 };
+
+    try {
+      const preparedCompanies = companyList.map(company => ({
+        ...company,
+        domains: company.domains?.map(d => d.toLowerCase().trim()) || [],
+        updatedAt: new Date(),
+      }));
+
+      const result = await db
+        .insert(companies)
+        .values(preparedCompanies)
+        .onConflictDoNothing()
+        .returning({ id: companies.id });
+
+      return { inserted: result.length };
+    } catch (error) {
+      console.error('Bulk insert error:', error);
+      throw error;
+    }
+  }
+
+  async getMissingCompanyDomains(): Promise<{ domain: string; contactCount: number }[]> {
+    const result = await db.execute(sql`
+      WITH contact_domains AS (
+        SELECT DISTINCT 
+          LOWER(email_domain) as domain,
+          COUNT(*) as contact_count
+        FROM contacts
+        WHERE email_domain IS NOT NULL 
+          AND email_domain != ''
+          AND is_deleted = false
+        GROUP BY LOWER(email_domain)
+      ),
+      existing_company_domains AS (
+        SELECT DISTINCT LOWER(unnest(domains)) as domain
+        FROM companies
+        WHERE is_deleted = false
+          AND domains IS NOT NULL
+          AND array_length(domains, 1) > 0
+      )
+      SELECT cd.domain, cd.contact_count::int as contact_count
+      FROM contact_domains cd
+      LEFT JOIN existing_company_domains ecd ON cd.domain = ecd.domain
+      WHERE ecd.domain IS NULL
+        AND cd.domain NOT LIKE '%@%'
+        AND cd.domain NOT LIKE '%.%@%'
+        AND LENGTH(cd.domain) > 3
+        AND cd.domain ~ '^[a-z0-9][a-z0-9.-]+[a-z0-9]\\.[a-z]{2,}$'
+      ORDER BY cd.contact_count DESC
+      LIMIT 1000
+    `);
+
+    return result.rows.map((row: any) => ({
+      domain: row.domain,
+      contactCount: Number(row.contact_count),
+    }));
   }
   
   // ============ PROSPECT OPERATIONS WITH COMPANY MATCHING ============
