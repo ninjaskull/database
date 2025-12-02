@@ -14,6 +14,7 @@ import {
   dataQualityIssues,
   databaseMetrics,
   archivedRecords,
+  bulkOperationJobs,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -45,6 +46,9 @@ import {
   type InsertDatabaseMetrics,
   type ArchivedRecord,
   type InsertArchivedRecord,
+  type BulkOperationJob,
+  type InsertBulkOperationJob,
+  type BulkProgressEvent,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
@@ -2616,6 +2620,506 @@ export class DatabaseStorage implements IStorage {
         apiRequests: Number(apiRequests.count)
       }
     };
+  }
+
+  // ============ BULK OPERATION JOB METHODS ============
+
+  async createBulkOperationJob(job: InsertBulkOperationJob): Promise<BulkOperationJob> {
+    const [created] = await db.insert(bulkOperationJobs).values(job).returning();
+    return created;
+  }
+
+  async getBulkOperationJob(id: string): Promise<BulkOperationJob | undefined> {
+    const [job] = await db.select().from(bulkOperationJobs).where(eq(bulkOperationJobs.id, id));
+    return job || undefined;
+  }
+
+  async updateBulkOperationJob(id: string, updates: Partial<BulkOperationJob>): Promise<BulkOperationJob | undefined> {
+    const [updated] = await db
+      .update(bulkOperationJobs)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(bulkOperationJobs.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getRecentBulkOperationJobs(limit: number = 20): Promise<BulkOperationJob[]> {
+    return await db
+      .select()
+      .from(bulkOperationJobs)
+      .orderBy(desc(bulkOperationJobs.createdAt))
+      .limit(limit);
+  }
+
+  async appendBulkJobActivity(jobId: string, activity: { type: string; message: string; details?: any }): Promise<void> {
+    const job = await this.getBulkOperationJob(jobId);
+    if (job) {
+      const currentActivity = (job.activityLog as any[]) || [];
+      currentActivity.push({
+        timestamp: new Date().toISOString(),
+        ...activity,
+      });
+      await this.updateBulkOperationJob(jobId, { activityLog: currentActivity });
+    }
+  }
+
+  async appendBulkJobError(jobId: string, error: { itemId: string; itemName: string; error: string }): Promise<void> {
+    const job = await this.getBulkOperationJob(jobId);
+    if (job) {
+      const currentErrors = (job.errors as any[]) || [];
+      currentErrors.push(error);
+      await this.updateBulkOperationJob(jobId, { errors: currentErrors });
+    }
+  }
+
+  // ============ REAL-TIME BULK OPERATIONS ============
+
+  async bulkMatchProspectsWithProgress(
+    jobId: string, 
+    onProgress: (progress: Partial<BulkProgressEvent>) => void
+  ): Promise<{ matched: number; unmatched: number; skipped: number }> {
+    let matched = 0;
+    let unmatched = 0;
+    let skipped = 0;
+    let processed = 0;
+    const BATCH_SIZE = 50;
+    
+    const unmatchedContacts = await this.getUnmatchedProspects();
+    const total = unmatchedContacts.length;
+    
+    await this.updateBulkOperationJob(jobId, { 
+      totalItems: total, 
+      status: 'running',
+      startedAt: new Date(),
+    });
+
+    onProgress({
+      operationType: 'bulk-match',
+      status: 'running',
+      totals: { total, processed: 0, success: 0, failed: 0, skipped: 0, matched: 0 },
+      message: `Starting to match ${total} unmatched contacts...`,
+    });
+
+    for (let i = 0; i < unmatchedContacts.length; i += BATCH_SIZE) {
+      const batch = unmatchedContacts.slice(i, i + BATCH_SIZE);
+      
+      for (const contact of batch) {
+        processed++;
+        
+        try {
+          if (!contact.company && !contact.website && !contact.companyLinkedIn && !contact.email) {
+            skipped++;
+            onProgress({
+              operationType: 'bulk-match',
+              status: 'running',
+              totals: { total, processed, success: matched, failed: 0, skipped, matched },
+              current: {
+                id: contact.id,
+                name: contact.fullName || contact.email || 'Unknown',
+                step: 'Skipped - no company identifiers',
+              },
+            });
+            continue;
+          }
+
+          const result = await this.matchProspectToCompany(contact.id);
+          
+          if (result.matched) {
+            matched++;
+            onProgress({
+              operationType: 'bulk-match',
+              status: 'running',
+              totals: { total, processed, success: matched, failed: 0, skipped, matched },
+              current: {
+                id: contact.id,
+                name: contact.fullName || contact.email || 'Unknown',
+                companyMatched: result.companyName,
+                step: 'Matched',
+              },
+              message: `Matched ${contact.fullName || contact.email} to ${result.companyName}`,
+            });
+          } else {
+            unmatched++;
+            onProgress({
+              operationType: 'bulk-match',
+              status: 'running',
+              totals: { total, processed, success: matched, failed: unmatched, skipped, matched },
+              current: {
+                id: contact.id,
+                name: contact.fullName || contact.email || 'Unknown',
+                step: 'No match found',
+              },
+            });
+          }
+        } catch (error) {
+          unmatched++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await this.appendBulkJobError(jobId, {
+            itemId: contact.id,
+            itemName: contact.fullName || contact.email || 'Unknown',
+            error: errorMsg,
+          });
+        }
+      }
+      
+      await this.updateBulkOperationJob(jobId, {
+        processedItems: processed,
+        successCount: matched,
+        failedCount: unmatched,
+        skippedCount: skipped,
+        matchedCount: matched,
+      });
+    }
+    
+    return { matched, unmatched, skipped };
+  }
+
+  async bulkAutoFillWithProgress(
+    jobId: string,
+    onProgress: (progress: Partial<BulkProgressEvent>) => void
+  ): Promise<{ processed: number; updated: number; skipped: number; companiesProcessed: string[] }> {
+    const BATCH_SIZE = 100;
+    let processed = 0;
+    let updated = 0;
+    let skipped = 0;
+    const companiesProcessed: string[] = [];
+    
+    const contactsToProcess = await db
+      .select()
+      .from(contacts)
+      .where(and(
+        eq(contacts.isDeleted, false),
+        or(
+          and(isNotNull(contacts.company), ne(contacts.company, '')),
+          and(isNotNull(contacts.website), ne(contacts.website, '')),
+          and(isNotNull(contacts.companyLinkedIn), ne(contacts.companyLinkedIn, '')),
+          and(isNotNull(contacts.email), ne(contacts.email, ''))
+        )
+      ));
+
+    const total = contactsToProcess.length;
+    const companyTemplateCache = new Map<string, Partial<Contact> | null>();
+
+    await this.updateBulkOperationJob(jobId, { 
+      totalItems: total, 
+      status: 'running',
+      startedAt: new Date(),
+    });
+
+    onProgress({
+      operationType: 'bulk-autofill',
+      status: 'running',
+      totals: { total, processed: 0, success: 0, failed: 0, skipped: 0, matched: 0 },
+      message: `Starting auto-fill for ${total} contacts...`,
+    });
+
+    for (let i = 0; i < contactsToProcess.length; i += BATCH_SIZE) {
+      const batch = contactsToProcess.slice(i, i + BATCH_SIZE);
+      
+      for (const contact of batch) {
+        processed++;
+        
+        const emailDomain = CompanyMatcher.extractEmailDomain(contact.email);
+        
+        if (!contact.company?.trim() && !contact.website?.trim() && !contact.companyLinkedIn?.trim() && !emailDomain) {
+          skipped++;
+          onProgress({
+            operationType: 'bulk-autofill',
+            status: 'running',
+            totals: { total, processed, success: updated, failed: 0, skipped, matched: companiesProcessed.length },
+            current: {
+              id: contact.id,
+              name: contact.fullName || contact.email || 'Unknown',
+              step: 'Skipped - no company identifiers',
+            },
+          });
+          continue;
+        }
+        
+        const normalizedCompany = CompanyMatcher.normalizeCompanyName(contact.company);
+        const normalizedWebsite = CompanyMatcher.normalizeWebsite(contact.website);
+        const cacheKey = `${normalizedCompany}|${normalizedWebsite}|${contact.companyLinkedIn || ''}|${emailDomain || ''}`;
+        
+        let companyTemplate = companyTemplateCache.get(cacheKey);
+        if (companyTemplate === undefined) {
+          companyTemplate = await this.getCompanyTemplate(
+            contact.company || undefined, 
+            contact.website || undefined, 
+            contact.companyLinkedIn || undefined,
+            contact.email || undefined
+          );
+          companyTemplateCache.set(cacheKey, companyTemplate);
+        }
+
+        if (!companyTemplate) {
+          skipped++;
+          onProgress({
+            operationType: 'bulk-autofill',
+            status: 'running',
+            totals: { total, processed, success: updated, failed: 0, skipped, matched: companiesProcessed.length },
+            current: {
+              id: contact.id,
+              name: contact.fullName || contact.email || 'Unknown',
+              step: 'No company template found',
+            },
+          });
+          continue;
+        }
+
+        const fieldsToFill = Object.keys(companyTemplate) as Array<keyof Partial<Contact>>;
+        const autoFilledFields: string[] = [];
+        const updateData: any = {};
+
+        fieldsToFill.forEach(field => {
+          const currentValue = (contact as any)[field];
+          const templateValue = companyTemplate![field];
+          
+          if ((!currentValue || currentValue === '') && templateValue !== null && templateValue !== undefined) {
+            updateData[field] = templateValue;
+            autoFilledFields.push(field as string);
+          }
+        });
+
+        if (autoFilledFields.length > 0) {
+          await db
+            .update(contacts)
+            .set({
+              ...updateData,
+              updatedAt: new Date(),
+            })
+            .where(eq(contacts.id, contact.id));
+
+          await this.createContactActivity({
+            contactId: contact.id,
+            activityType: 'updated',
+            description: `Bulk auto-fill applied company details: ${autoFilledFields.join(', ')}`,
+            changes: { autoFilledFields },
+          });
+
+          updated++;
+          
+          const companyIdentifier = contact.company || contact.website || contact.companyLinkedIn || 'Unknown Company';
+          if (!companiesProcessed.includes(companyIdentifier)) {
+            companiesProcessed.push(companyIdentifier);
+          }
+
+          onProgress({
+            operationType: 'bulk-autofill',
+            status: 'running',
+            totals: { total, processed, success: updated, failed: 0, skipped, matched: companiesProcessed.length },
+            current: {
+              id: contact.id,
+              name: contact.fullName || contact.email || 'Unknown',
+              fieldsFilled: autoFilledFields,
+              step: `Filled ${autoFilledFields.length} fields`,
+            },
+            message: `Auto-filled ${autoFilledFields.length} fields for ${contact.fullName || contact.email}`,
+          });
+        } else {
+          skipped++;
+          onProgress({
+            operationType: 'bulk-autofill',
+            status: 'running',
+            totals: { total, processed, success: updated, failed: 0, skipped, matched: companiesProcessed.length },
+            current: {
+              id: contact.id,
+              name: contact.fullName || contact.email || 'Unknown',
+              step: 'All fields already filled',
+            },
+          });
+        }
+      }
+      
+      await this.updateBulkOperationJob(jobId, {
+        processedItems: processed,
+        successCount: updated,
+        skippedCount: skipped,
+        matchedCount: companiesProcessed.length,
+      });
+    }
+    
+    return { processed, updated, skipped, companiesProcessed };
+  }
+
+  async bulkDeleteContactsWithProgress(
+    jobId: string,
+    contactIds: string[],
+    onProgress: (progress: Partial<BulkProgressEvent>) => void
+  ): Promise<{ deleted: number; failed: number }> {
+    const BATCH_SIZE = 50;
+    let deleted = 0;
+    let failed = 0;
+    let processed = 0;
+    const total = contactIds.length;
+
+    await this.updateBulkOperationJob(jobId, { 
+      totalItems: total, 
+      status: 'running',
+      startedAt: new Date(),
+    });
+
+    onProgress({
+      operationType: 'bulk-delete',
+      status: 'running',
+      totals: { total, processed: 0, success: 0, failed: 0, skipped: 0, matched: 0 },
+      message: `Starting to delete ${total} contacts...`,
+    });
+
+    for (let i = 0; i < contactIds.length; i += BATCH_SIZE) {
+      const batch = contactIds.slice(i, i + BATCH_SIZE);
+      
+      for (const contactId of batch) {
+        processed++;
+        
+        try {
+          const contact = await this.getContact(contactId);
+          const success = await this.deleteContact(contactId);
+          
+          if (success) {
+            deleted++;
+            onProgress({
+              operationType: 'bulk-delete',
+              status: 'running',
+              totals: { total, processed, success: deleted, failed, skipped: 0, matched: 0 },
+              current: {
+                id: contactId,
+                name: contact?.fullName || contact?.email || contactId,
+                step: 'Deleted',
+              },
+              message: `Deleted ${contact?.fullName || contact?.email || contactId}`,
+            });
+          } else {
+            failed++;
+            await this.appendBulkJobError(jobId, {
+              itemId: contactId,
+              itemName: contact?.fullName || contact?.email || contactId,
+              error: 'Failed to delete',
+            });
+          }
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await this.appendBulkJobError(jobId, {
+            itemId: contactId,
+            itemName: contactId,
+            error: errorMsg,
+          });
+        }
+      }
+      
+      await this.updateBulkOperationJob(jobId, {
+        processedItems: processed,
+        successCount: deleted,
+        failedCount: failed,
+      });
+    }
+    
+    return { deleted, failed };
+  }
+
+  async bulkImportCompaniesWithProgress(
+    jobId: string,
+    companyList: InsertCompany[],
+    onProgress: (progress: Partial<BulkProgressEvent>) => void
+  ): Promise<{ imported: number; duplicates: number; failed: number }> {
+    const BATCH_SIZE = 50;
+    let imported = 0;
+    let duplicates = 0;
+    let failed = 0;
+    let processed = 0;
+    const total = companyList.length;
+
+    await this.updateBulkOperationJob(jobId, { 
+      totalItems: total, 
+      status: 'running',
+      startedAt: new Date(),
+    });
+
+    onProgress({
+      operationType: 'bulk-import-companies',
+      status: 'running',
+      totals: { total, processed: 0, success: 0, failed: 0, skipped: 0, matched: 0 },
+      message: `Starting to import ${total} companies...`,
+    });
+
+    for (let i = 0; i < companyList.length; i += BATCH_SIZE) {
+      const batch = companyList.slice(i, i + BATCH_SIZE);
+      
+      for (const company of batch) {
+        processed++;
+        
+        try {
+          let existing: Company | undefined;
+          
+          if (company.domains && company.domains.length > 0) {
+            for (const domain of company.domains) {
+              existing = await this.getCompanyByDomain(domain);
+              if (existing) break;
+            }
+          }
+          
+          if (!existing && company.name) {
+            existing = await this.getCompanyByName(company.name);
+          }
+          
+          if (existing) {
+            duplicates++;
+            onProgress({
+              operationType: 'bulk-import-companies',
+              status: 'running',
+              totals: { total, processed, success: imported, failed, skipped: duplicates, matched: 0 },
+              current: {
+                id: existing.id,
+                name: company.name || 'Unknown',
+                step: 'Duplicate found',
+              },
+              message: `Skipped duplicate: ${company.name}`,
+            });
+          } else {
+            const created = await this.createCompany(company);
+            imported++;
+            onProgress({
+              operationType: 'bulk-import-companies',
+              status: 'running',
+              totals: { total, processed, success: imported, failed, skipped: duplicates, matched: 0 },
+              current: {
+                id: created.id,
+                name: company.name || 'Unknown',
+                step: 'Imported',
+              },
+              message: `Imported: ${company.name}`,
+            });
+          }
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await this.appendBulkJobError(jobId, {
+            itemId: `company-${processed}`,
+            itemName: company.name || 'Unknown',
+            error: errorMsg,
+          });
+          onProgress({
+            operationType: 'bulk-import-companies',
+            status: 'running',
+            totals: { total, processed, success: imported, failed, skipped: duplicates, matched: 0 },
+            current: {
+              id: `company-${processed}`,
+              name: company.name || 'Unknown',
+              step: 'Failed',
+            },
+          });
+        }
+      }
+      
+      await this.updateBulkOperationJob(jobId, {
+        processedItems: processed,
+        successCount: imported,
+        failedCount: failed,
+        skippedCount: duplicates,
+      });
+    }
+    
+    return { imported, duplicates, failed };
   }
 }
 

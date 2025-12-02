@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
+import { BulkOperationsPanel } from "@/components/BulkOperationsPanel";
 import { 
   Database, 
   Activity, 
@@ -347,6 +348,12 @@ export default function DatabaseManagement() {
                 </CardContent>
               </Card>
             </div>
+
+            <BulkOperationsPanel
+              onComplete={() => {
+                queryClient.invalidateQueries({ queryKey: ["/api/database/health"] });
+              }}
+            />
 
             <Tabs defaultValue="issues" className="space-y-4">
               <TabsList>

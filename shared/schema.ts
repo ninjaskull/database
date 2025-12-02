@@ -401,6 +401,50 @@ export const archivedRecords = pgTable("archived_records", {
   index("archived_records_deleted_at_idx").on(table.deletedAt),
 ]);
 
+// Bulk operation jobs - tracks all bulk actions with real-time progress
+export const bulkOperationJobs = pgTable("bulk_operation_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  operationType: text("operation_type").notNull(), // 'bulk-match', 'bulk-autofill', 'bulk-delete', 'bulk-import-companies'
+  status: text("status").notNull().default("queued"), // 'queued', 'running', 'completed', 'failed', 'cancelled'
+  
+  // Progress tracking
+  totalItems: integer("total_items").default(0),
+  processedItems: integer("processed_items").default(0),
+  successCount: integer("success_count").default(0),
+  failedCount: integer("failed_count").default(0),
+  skippedCount: integer("skipped_count").default(0),
+  matchedCount: integer("matched_count").default(0),
+  
+  // Current item being processed (for real-time display)
+  currentItemId: varchar("current_item_id"),
+  currentItemName: text("current_item_name"),
+  currentStep: text("current_step"),
+  
+  // Operation parameters
+  params: jsonb("params"), // Operation-specific parameters
+  
+  // Results and details
+  results: jsonb("results"), // Detailed operation results
+  errors: jsonb("errors").default(sql`'[]'::jsonb`), // Array of error objects
+  activityLog: jsonb("activity_log").default(sql`'[]'::jsonb`), // Real-time activity feed
+  
+  // Timing
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+  
+  // User tracking
+  userId: varchar("user_id").references(() => users.id),
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("bulk_operation_jobs_operation_type_idx").on(table.operationType),
+  index("bulk_operation_jobs_status_idx").on(table.status),
+  index("bulk_operation_jobs_user_id_idx").on(table.userId),
+  index("bulk_operation_jobs_created_at_idx").on(table.createdAt),
+]);
+
 // Relations
 export const companiesRelations = relations(companies, ({ many }) => ({
   contacts: many(contacts),
@@ -549,6 +593,14 @@ export const insertArchivedRecordSchema = createInsertSchema(archivedRecords).om
   createdAt: true,
 });
 
+export const insertBulkOperationJobSchema = createInsertSchema(bulkOperationJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  startedAt: true,
+  finishedAt: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -600,3 +652,31 @@ export type DatabaseMetrics = typeof databaseMetrics.$inferSelect;
 export type InsertDatabaseMetrics = z.infer<typeof insertDatabaseMetricsSchema>;
 export type ArchivedRecord = typeof archivedRecords.$inferSelect;
 export type InsertArchivedRecord = z.infer<typeof insertArchivedRecordSchema>;
+export type BulkOperationJob = typeof bulkOperationJobs.$inferSelect;
+export type InsertBulkOperationJob = z.infer<typeof insertBulkOperationJobSchema>;
+
+// Bulk operation progress event types
+export interface BulkProgressEvent {
+  type: 'bulk-progress';
+  jobId: string;
+  operationType: string;
+  status: string;
+  totals: {
+    total: number;
+    processed: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    matched: number;
+  };
+  current?: {
+    id: string;
+    name: string;
+    companyMatched?: string;
+    fieldsFilled?: string[];
+    step?: string;
+  };
+  message?: string;
+  errors?: Array<{ itemId: string; itemName: string; error: string }>;
+  activity?: Array<{ timestamp: string; type: string; message: string; details?: any }>;
+}

@@ -15,6 +15,7 @@ import { linkedinEnrichmentService } from "./linkedin-enrichment";
 import { validateApiKey, generateApiKey, hashApiKey } from "./api-auth";
 import { apiV1Router } from "./api-v1-routes";
 import { API_SCOPES } from "./api-v1-middleware";
+import { wsHub } from "./ws-hub";
 import fs from "fs";
 import path from "path";
 
@@ -891,7 +892,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Bulk auto-fill company details for all contacts
+  // Bulk auto-fill company details for all contacts (legacy sync endpoint)
   app.post("/api/contacts/bulk-autofill", requireAuth, async (req, res) => {
     try {
       const result = await storage.bulkAutoFillCompanyDetails();
@@ -907,6 +908,336 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to perform bulk auto-fill", 
         error: error instanceof Error ? error.message : 'Unknown error' 
       });
+    }
+  });
+
+  // ============ REAL-TIME BULK OPERATIONS API ============
+
+  // Get bulk operation job status
+  app.get("/api/bulk/jobs/:id", requireAuth, async (req, res) => {
+    try {
+      const job = await storage.getBulkOperationJob(req.params.id);
+      if (!job) {
+        return res.status(404).json({ message: "Bulk operation job not found" });
+      }
+      res.json({ success: true, job });
+    } catch (error) {
+      console.error('Get bulk job error:', error);
+      res.status(500).json({ message: "Failed to get bulk operation job" });
+    }
+  });
+
+  // Get recent bulk operation jobs
+  app.get("/api/bulk/jobs", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const jobs = await storage.getRecentBulkOperationJobs(limit);
+      res.json({ success: true, jobs });
+    } catch (error) {
+      console.error('Get bulk jobs error:', error);
+      res.status(500).json({ message: "Failed to get bulk operation jobs" });
+    }
+  });
+
+  // Start real-time bulk match operation
+  app.post("/api/bulk/match", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Create the job
+      const job = await storage.createBulkOperationJob({
+        operationType: 'bulk-match',
+        status: 'queued',
+        userId,
+      });
+
+      // Respond immediately with job ID
+      res.json({ 
+        success: true, 
+        jobId: job.id,
+        message: "Bulk match operation started. Subscribe to WebSocket for real-time updates."
+      });
+
+      // Run the operation asynchronously with WebSocket updates
+      setImmediate(async () => {
+        try {
+          const result = await storage.bulkMatchProspectsWithProgress(job.id, (progress) => {
+            wsHub.broadcastBulkProgress(job.id, progress);
+          });
+          
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'completed',
+            finishedAt: new Date(),
+            results: result,
+          });
+          
+          wsHub.broadcastBulkComplete(job.id, {
+            operationType: 'bulk-match',
+            totals: {
+              total: result.matched + result.unmatched + result.skipped,
+              processed: result.matched + result.unmatched + result.skipped,
+              success: result.matched,
+              failed: result.unmatched,
+              skipped: result.skipped,
+              matched: result.matched,
+            },
+            message: `Matched ${result.matched} contacts, ${result.unmatched} unmatched, ${result.skipped} skipped`,
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'failed',
+            finishedAt: new Date(),
+          });
+          wsHub.broadcastBulkError(job.id, errorMsg, { operationType: 'bulk-match' });
+        }
+      });
+    } catch (error) {
+      console.error('Start bulk match error:', error);
+      res.status(500).json({ message: "Failed to start bulk match operation" });
+    }
+  });
+
+  // Start real-time bulk auto-fill operation
+  app.post("/api/bulk/autofill", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Create the job
+      const job = await storage.createBulkOperationJob({
+        operationType: 'bulk-autofill',
+        status: 'queued',
+        userId,
+      });
+
+      // Respond immediately with job ID
+      res.json({ 
+        success: true, 
+        jobId: job.id,
+        message: "Bulk auto-fill operation started. Subscribe to WebSocket for real-time updates."
+      });
+
+      // Run the operation asynchronously with WebSocket updates
+      setImmediate(async () => {
+        try {
+          const result = await storage.bulkAutoFillWithProgress(job.id, (progress) => {
+            wsHub.broadcastBulkProgress(job.id, progress);
+          });
+          
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'completed',
+            finishedAt: new Date(),
+            results: result,
+          });
+          
+          wsHub.broadcastBulkComplete(job.id, {
+            operationType: 'bulk-autofill',
+            totals: {
+              total: result.processed,
+              processed: result.processed,
+              success: result.updated,
+              failed: 0,
+              skipped: result.skipped,
+              matched: result.companiesProcessed.length,
+            },
+            message: `Updated ${result.updated} contacts across ${result.companiesProcessed.length} companies`,
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'failed',
+            finishedAt: new Date(),
+          });
+          wsHub.broadcastBulkError(job.id, errorMsg, { operationType: 'bulk-autofill' });
+        }
+      });
+    } catch (error) {
+      console.error('Start bulk autofill error:', error);
+      res.status(500).json({ message: "Failed to start bulk auto-fill operation" });
+    }
+  });
+
+  // Start real-time bulk delete operation
+  app.post("/api/bulk/delete", requireAuth, async (req, res) => {
+    try {
+      const { contactIds } = req.body;
+      const userId = (req as any).user?.id;
+      
+      if (!Array.isArray(contactIds) || contactIds.length === 0) {
+        return res.status(400).json({ message: "Contact IDs array is required" });
+      }
+      
+      // Create the job
+      const job = await storage.createBulkOperationJob({
+        operationType: 'bulk-delete',
+        status: 'queued',
+        params: { contactIds },
+        userId,
+      });
+
+      // Respond immediately with job ID
+      res.json({ 
+        success: true, 
+        jobId: job.id,
+        message: "Bulk delete operation started. Subscribe to WebSocket for real-time updates."
+      });
+
+      // Run the operation asynchronously with WebSocket updates
+      setImmediate(async () => {
+        try {
+          const result = await storage.bulkDeleteContactsWithProgress(job.id, contactIds, (progress) => {
+            wsHub.broadcastBulkProgress(job.id, progress);
+          });
+          
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'completed',
+            finishedAt: new Date(),
+            results: result,
+          });
+          
+          wsHub.broadcastBulkComplete(job.id, {
+            operationType: 'bulk-delete',
+            totals: {
+              total: contactIds.length,
+              processed: contactIds.length,
+              success: result.deleted,
+              failed: result.failed,
+              skipped: 0,
+              matched: 0,
+            },
+            message: `Deleted ${result.deleted} contacts, ${result.failed} failed`,
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'failed',
+            finishedAt: new Date(),
+          });
+          wsHub.broadcastBulkError(job.id, errorMsg, { operationType: 'bulk-delete' });
+        }
+      });
+    } catch (error) {
+      console.error('Start bulk delete error:', error);
+      res.status(500).json({ message: "Failed to start bulk delete operation" });
+    }
+  });
+
+  // Start real-time bulk company import operation
+  app.post("/api/bulk/companies/import", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fileContent = fs.readFileSync(req.file.path, 'utf-8');
+      const lines = fileContent.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        return res.status(400).json({ message: "File is empty or has no data rows" });
+      }
+
+      // Parse CSV headers and data
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const companiesToImport: any[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+        if (values.length >= 1 && values[0]) {
+          const company: any = {};
+          headers.forEach((header, idx) => {
+            if (values[idx]) {
+              const normalizedHeader = header.toLowerCase().replace(/[\s_-]+/g, '');
+              if (normalizedHeader.includes('name') || normalizedHeader === 'company') {
+                company.name = values[idx];
+              } else if (normalizedHeader.includes('website') || normalizedHeader.includes('domain')) {
+                company.website = values[idx];
+                const domain = values[idx].replace(/https?:\/\//, '').replace('www.', '').split('/')[0];
+                company.domains = [domain];
+              } else if (normalizedHeader.includes('industry')) {
+                company.industry = values[idx];
+              } else if (normalizedHeader.includes('employee') || normalizedHeader.includes('size')) {
+                company.employeeSizeBracket = values[idx];
+              } else if (normalizedHeader.includes('linkedin')) {
+                company.linkedinUrl = values[idx];
+              } else if (normalizedHeader.includes('phone')) {
+                company.phone = values[idx];
+              } else if (normalizedHeader.includes('city')) {
+                company.city = values[idx];
+              } else if (normalizedHeader.includes('state')) {
+                company.state = values[idx];
+              } else if (normalizedHeader.includes('country')) {
+                company.country = values[idx];
+              }
+            }
+          });
+          
+          if (company.name) {
+            companiesToImport.push(company);
+          }
+        }
+      }
+
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+
+      if (companiesToImport.length === 0) {
+        return res.status(400).json({ message: "No valid companies found in file" });
+      }
+      
+      // Create the job
+      const job = await storage.createBulkOperationJob({
+        operationType: 'bulk-import-companies',
+        status: 'queued',
+        params: { filename: req.file.originalname, totalCompanies: companiesToImport.length },
+        userId,
+      });
+
+      // Respond immediately with job ID
+      res.json({ 
+        success: true, 
+        jobId: job.id,
+        message: `Started importing ${companiesToImport.length} companies. Subscribe to WebSocket for real-time updates.`
+      });
+
+      // Run the operation asynchronously with WebSocket updates
+      setImmediate(async () => {
+        try {
+          const result = await storage.bulkImportCompaniesWithProgress(job.id, companiesToImport, (progress) => {
+            wsHub.broadcastBulkProgress(job.id, progress);
+          });
+          
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'completed',
+            finishedAt: new Date(),
+            results: result,
+          });
+          
+          wsHub.broadcastBulkComplete(job.id, {
+            operationType: 'bulk-import-companies',
+            totals: {
+              total: companiesToImport.length,
+              processed: companiesToImport.length,
+              success: result.imported,
+              failed: result.failed,
+              skipped: result.duplicates,
+              matched: 0,
+            },
+            message: `Imported ${result.imported} companies, ${result.duplicates} duplicates, ${result.failed} failed`,
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          await storage.updateBulkOperationJob(job.id, {
+            status: 'failed',
+            finishedAt: new Date(),
+          });
+          wsHub.broadcastBulkError(job.id, errorMsg, { operationType: 'bulk-import-companies' });
+        }
+      });
+    } catch (error) {
+      console.error('Start bulk company import error:', error);
+      res.status(500).json({ message: "Failed to start bulk company import" });
     }
   });
 
