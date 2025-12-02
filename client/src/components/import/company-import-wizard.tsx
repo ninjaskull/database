@@ -319,7 +319,7 @@ export function CompanyImportWizard({ open, onOpenChange, onImportComplete }: Co
           </div>
         </div>
 
-        {!currentMapping['name'] && (
+        {!Object.values(currentMapping).includes('name') && (
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -335,7 +335,7 @@ export function CompanyImportWizard({ open, onOpenChange, onImportComplete }: Co
           </Button>
           <Button 
             onClick={() => setStep('options')} 
-            disabled={!currentMapping['name']}
+            disabled={!Object.values(currentMapping).includes('name')}
             data-testid="button-continue-options"
           >
             Continue
