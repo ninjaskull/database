@@ -15,26 +15,19 @@ import DatabaseManagement from "@/pages/database-management";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import { useAuth } from "@/hooks/useAuth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
-  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(() => {
+    return localStorage.getItem('authToken');
+  });
 
   const handleLoginSuccess = (user: any, token: string) => {
     setAuthToken(token);
-    // Store token in localStorage for persistence
     localStorage.setItem('authToken', token);
     queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
   };
-
-  // Check for stored token on initial load
-  if (!authToken && !isAuthenticated) {
-    const storedToken = localStorage.getItem('authToken');
-    if (storedToken) {
-      setAuthToken(storedToken);
-    }
-  }
 
   if (isLoading) {
     return (
