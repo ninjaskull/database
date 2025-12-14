@@ -23,8 +23,9 @@ import {
   User, Settings, Bell, Shield, Database, Download, Upload, 
   Trash2, RefreshCw, Eye, EyeOff, Save, AlertTriangle,
   Mail, Phone, Globe, Clock, Palette, Monitor, Sun, Moon,
-  Key, Copy, Plus, Check, XCircle
+  Key, Copy, Plus, Check, XCircle, Chrome, ExternalLink
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 
 // Settings schemas
 const profileSchema = z.object({
@@ -97,6 +98,7 @@ export default function SettingsPage() {
   const [newKeyLabel, setNewKeyLabel] = useState("");
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [copiedExtensionToken, setCopiedExtensionToken] = useState(false);
 
   // Profile form
   const profileForm = useForm<ProfileData>({
@@ -323,6 +325,34 @@ export default function SettingsPage() {
     retry: 1,
   });
 
+  // Extension usage query - only fetch when on Extension tab
+  const { data: extensionData, isLoading: extensionLoading, error: extensionError, refetch: refetchExtension } = useQuery<{
+    valid: boolean;
+    user: { id: string; email: string; name: string };
+    plan: { name: string; displayName: string; canUseChromeExtension: boolean; extensionLookupLimit: number } | null;
+    usage: { remaining: number; limit: number; used: number };
+  }>({
+    queryKey: ["/api/extension/validate"],
+    queryFn: async () => {
+      return await apiRequest("/api/extension/validate");
+    },
+    enabled: activeTab === "extension",
+    staleTime: 0,
+    retry: 1,
+  });
+
+  const copyExtensionToken = async () => {
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      await navigator.clipboard.writeText(token);
+      setCopiedExtensionToken(true);
+      toast({ title: "Token copied to clipboard" });
+      setTimeout(() => setCopiedExtensionToken(false), 2000);
+    } else {
+      toast({ title: "No auth token available", variant: "destructive" });
+    }
+  };
+
   // Create API key mutation
   const createApiKeyMutation = useMutation({
     mutationFn: async (label: string) => {
@@ -407,7 +437,7 @@ export default function SettingsPage() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-6 lg:w-fit">
+              <TabsList className="grid w-full grid-cols-7 lg:w-fit">
                 <TabsTrigger value="profile" className="flex items-center">
                   <User className="mr-2 h-4 w-4" />
                   Profile
@@ -431,6 +461,10 @@ export default function SettingsPage() {
                 <TabsTrigger value="api-keys" className="flex items-center">
                   <Key className="mr-2 h-4 w-4" />
                   API Keys
+                </TabsTrigger>
+                <TabsTrigger value="extension" className="flex items-center">
+                  <Chrome className="mr-2 h-4 w-4" />
+                  Extension
                 </TabsTrigger>
               </TabsList>
 
@@ -1256,6 +1290,169 @@ export default function SettingsPage() {
                         </code>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Chrome Extension Settings */}
+              <TabsContent value="extension" className="space-y-6">
+                <Card data-testid="extension-settings-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Chrome className="mr-2 h-5 w-5" />
+                      Chrome Extension
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <Alert>
+                      <Chrome className="h-4 w-4" />
+                      <AlertDescription>
+                        The Chrome extension lets you look up contact information directly from LinkedIn profiles.
+                        Connect your account to start using the extension.
+                      </AlertDescription>
+                    </Alert>
+
+                    {extensionLoading ? (
+                      <div className="flex items-center gap-2 text-gray-500" data-testid="extension-loading">
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <p>Loading extension status...</p>
+                      </div>
+                    ) : extensionError ? (
+                      <Alert variant="destructive" data-testid="extension-error">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          Failed to load extension status. Please try refreshing or log in again.
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <>
+                        {/* Connection Status */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-medium">Connection Status</h3>
+                          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700" data-testid="extension-connection-status">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-3 h-3 rounded-full ${extensionData?.valid === true ? 'bg-green-500' : 'bg-gray-400'}`} data-testid="extension-status-indicator" />
+                              <div>
+                                <p className="font-medium" data-testid="text-extension-status">
+                                  {extensionData?.valid === true ? 'Connected' : 'Not Connected'}
+                                </p>
+                                <p className="text-sm text-gray-500" data-testid="text-extension-user">
+                                  {extensionData?.valid === true && extensionData?.user
+                                    ? `Logged in as ${extensionData.user.name || extensionData.user.email}`
+                                    : 'Extension is not connected to your account'}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => refetchExtension()}
+                              disabled={extensionLoading}
+                              data-testid="button-refresh-extension"
+                            >
+                              <RefreshCw className={`h-4 w-4 mr-2 ${extensionLoading ? 'animate-spin' : ''}`} />
+                              Refresh
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Auth Token */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-medium">Connect Extension</h3>
+                          <p className="text-sm text-gray-500">
+                            Copy your authentication token and paste it into the Chrome extension to connect your account.
+                          </p>
+                          <div className="flex gap-4">
+                            <Button
+                              onClick={copyExtensionToken}
+                              data-testid="button-copy-extension-token"
+                            >
+                              {copiedExtensionToken ? (
+                                <>
+                                  <Check className="mr-2 h-4 w-4" />
+                                  Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="mr-2 h-4 w-4" />
+                                  Copy Auth Token
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        {/* Usage Statistics */}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium">Usage Statistics</h3>
+                            <Badge variant="outline" data-testid="badge-extension-plan">
+                              {extensionData?.plan?.displayName || 'Free Plan'}
+                            </Badge>
+                          </div>
+                          
+                          {extensionData?.valid === true && extensionData?.plan?.canUseChromeExtension === true ? (
+                            <div className="space-y-3" data-testid="extension-usage-stats">
+                              <div className="flex items-center justify-between text-sm">
+                                <span>Daily Lookups</span>
+                                <span className="font-medium" data-testid="text-extension-usage">
+                                  {extensionData.usage?.used ?? 0} / {extensionData.usage?.limit ?? 0}
+                                </span>
+                              </div>
+                              <Progress 
+                                value={extensionData.usage?.limit 
+                                  ? ((extensionData.usage?.used ?? 0) / extensionData.usage.limit) * 100 
+                                  : 0
+                                } 
+                                className="h-2"
+                                data-testid="progress-extension-usage"
+                              />
+                              <p className="text-sm text-gray-500" data-testid="text-extension-remaining">
+                                {extensionData.usage?.remaining ?? 0} lookups remaining today
+                              </p>
+                            </div>
+                          ) : (
+                            <Alert variant="destructive" data-testid="extension-plan-unavailable">
+                              <AlertTriangle className="h-4 w-4" />
+                              <AlertDescription>
+                                {extensionData?.valid !== true 
+                                  ? 'Please log in to view extension usage.'
+                                  : 'Chrome extension is not available on your current plan. Upgrade to access LinkedIn profile lookups.'}
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        </div>
+
+                        <Separator />
+
+                        {/* Download Extension */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-medium">Install Extension</h3>
+                          <p className="text-sm text-gray-500">
+                            Download and install the Chrome extension to look up contact information 
+                            directly from LinkedIn profiles.
+                          </p>
+                          <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg space-y-3" data-testid="extension-install-instructions">
+                            <p className="text-sm font-medium">Installation Steps:</p>
+                            <ol className="text-sm text-gray-600 dark:text-gray-400 space-y-2 list-decimal list-inside">
+                              <li>Download the extension files from your dashboard</li>
+                              <li>Open Chrome and go to <code className="bg-white dark:bg-gray-700 px-1 rounded">chrome://extensions</code></li>
+                              <li>Enable "Developer mode" in the top right</li>
+                              <li>Click "Load unpacked" and select the extension folder</li>
+                              <li>Copy your auth token above and paste it when prompted</li>
+                            </ol>
+                          </div>
+                          <Button variant="outline" asChild data-testid="link-extension-docs">
+                            <a href="https://developer.chrome.com/docs/extensions/mv3/getstarted/" target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Chrome Extension Documentation
+                            </a>
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
