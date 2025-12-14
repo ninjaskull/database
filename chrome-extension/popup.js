@@ -71,6 +71,13 @@ function hideAllResults() {
 }
 
 function updateUsage(used, limit) {
+  if (limit === null || limit === undefined) {
+    usageCount.textContent = "Unlimited";
+    usageProgress.style.width = "100%";
+    usageProgress.style.background = "linear-gradient(90deg, #22c55e, #16a34a)";
+    return;
+  }
+  
   usageCount.textContent = `${used} / ${limit}`;
   const percentage = Math.min(100, (used / limit) * 100);
   usageProgress.style.width = `${percentage}%`;
@@ -152,14 +159,15 @@ async function lookupLinkedIn(url) {
 
     if (response.status === 403) {
       showError(data.message || "Lookup limit reached");
-      if (data.usage) {
-        updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
-      }
       return;
     }
 
     if (data.usage) {
-      updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
+      if (data.usage.unlimited || data.usage.limit === null) {
+        updateUsage(0, null);
+      } else {
+        updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
+      }
     }
 
     if (data.success && data.found) {
@@ -208,14 +216,15 @@ async function searchContacts(query) {
 
     if (response.status === 403) {
       showError(data.message || "Lookup limit reached");
-      if (data.usage) {
-        updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
-      }
       return;
     }
 
     if (data.usage) {
-      updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
+      if (data.usage.unlimited || data.usage.limit === null) {
+        updateUsage(0, null);
+      } else {
+        updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
+      }
     }
 
     if (data.success && data.contacts && data.contacts.length > 0) {
@@ -327,7 +336,12 @@ async function init() {
   if (sessionData) {
     userName.textContent = sessionData.user.name || sessionData.user.email;
     planBadge.textContent = sessionData.plan?.displayName || "Free";
-    updateUsage(sessionData.usage.used, sessionData.usage.limit);
+    
+    if (sessionData.usage?.unlimited || sessionData.usage?.limit === null) {
+      updateUsage(0, null);
+    } else {
+      updateUsage(sessionData.usage?.used || 0, sessionData.usage?.limit || 0);
+    }
 
     await checkCurrentTab();
     showView("main");

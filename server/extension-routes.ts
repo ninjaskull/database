@@ -1,7 +1,6 @@
 import { Router, Request, Response } from "express";
 import { storage } from "./storage";
 import { validateSession } from "./auth";
-import { validateApiKey } from "./api-auth";
 import { z } from "zod";
 
 const router = Router();
@@ -12,63 +11,6 @@ const linkedinLookupSchema = z.object({
     "Must be a LinkedIn URL"
   ),
 });
-
-async function checkExtensionUsage(userId: string): Promise<{
-  allowed: boolean;
-  remaining: number;
-  limit: number;
-  message?: string;
-}> {
-  const user = await storage.getUserById(userId);
-  if (!user) {
-    return { allowed: false, remaining: 0, limit: 0, message: "User not found" };
-  }
-
-  const plan = user.planId ? await storage.getSubscriptionPlan(user.planId) : null;
-  
-  if (!plan?.canUseChromeExtension) {
-    return { 
-      allowed: false, 
-      remaining: 0, 
-      limit: 0, 
-      message: "Chrome extension not available on your plan" 
-    };
-  }
-
-  const limit = plan.extensionLookupLimit || 50;
-  const used = user.dailyExtensionUsage || 0;
-  const remaining = Math.max(0, limit - used);
-
-  if (remaining === 0) {
-    return { 
-      allowed: false, 
-      remaining: 0, 
-      limit, 
-      message: "Daily extension lookup limit reached" 
-    };
-  }
-
-  return { allowed: true, remaining, limit };
-}
-
-async function incrementExtensionUsage(userId: string): Promise<void> {
-  const user = await storage.getUserById(userId);
-  if (user) {
-    const today = new Date();
-    const resetDate = user.usageResetDate ? new Date(user.usageResetDate) : null;
-    
-    if (!resetDate || resetDate.toDateString() !== today.toDateString()) {
-      await storage.updateUser(userId, {
-        dailyExtensionUsage: 1,
-        usageResetDate: today,
-      });
-    } else {
-      await storage.updateUser(userId, {
-        dailyExtensionUsage: (user.dailyExtensionUsage || 0) + 1,
-      });
-    }
-  }
-}
 
 router.get("/validate", async (req: Request, res: Response) => {
   try {
@@ -93,8 +35,6 @@ router.get("/validate", async (req: Request, res: Response) => {
     const fullUser = await storage.getUserById(user.id);
     const plan = fullUser?.planId ? await storage.getSubscriptionPlan(fullUser.planId) : null;
 
-    const usageCheck = await checkExtensionUsage(user.id);
-
     res.json({
       valid: true,
       user: {
@@ -105,13 +45,12 @@ router.get("/validate", async (req: Request, res: Response) => {
       plan: plan ? {
         name: plan.name,
         displayName: plan.displayName,
-        canUseChromeExtension: plan.canUseChromeExtension,
-        extensionLookupLimit: plan.extensionLookupLimit,
-      } : null,
+      } : { name: "free", displayName: "Free" },
       usage: {
-        remaining: usageCheck.remaining,
-        limit: usageCheck.limit,
-        used: usageCheck.limit - usageCheck.remaining,
+        remaining: null,
+        limit: null,
+        used: 0,
+        unlimited: true,
       },
     });
   } catch (error) {
@@ -140,18 +79,6 @@ router.post("/lookup", async (req: Request, res: Response) => {
       });
     }
 
-    const usageCheck = await checkExtensionUsage(user.id);
-    if (!usageCheck.allowed) {
-      return res.status(403).json({ 
-        success: false, 
-        message: usageCheck.message,
-        usage: {
-          remaining: usageCheck.remaining,
-          limit: usageCheck.limit,
-        }
-      });
-    }
-
     const parsed = linkedinLookupSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ 
@@ -168,10 +95,6 @@ router.post("/lookup", async (req: Request, res: Response) => {
       .replace(/^https?:\/\/(www\.)?/, "https://www.");
 
     const contacts = await storage.findContactsByLinkedInUrl(normalizedUrl);
-    
-    await incrementExtensionUsage(user.id);
-
-    const updatedUsage = await checkExtensionUsage(user.id);
 
     if (contacts.length > 0) {
       const contact = contacts[0];
@@ -197,8 +120,9 @@ router.post("/lookup", async (req: Request, res: Response) => {
           leadScore: contact.leadScore,
         },
         usage: {
-          remaining: updatedUsage.remaining,
-          limit: updatedUsage.limit,
+          remaining: null,
+          limit: null,
+          unlimited: true,
         },
       });
     } else {
@@ -207,8 +131,9 @@ router.post("/lookup", async (req: Request, res: Response) => {
         found: false,
         message: "No contact found for this LinkedIn profile",
         usage: {
-          remaining: updatedUsage.remaining,
-          limit: updatedUsage.limit,
+          remaining: null,
+          limit: null,
+          unlimited: true,
         },
       });
     }
@@ -241,18 +166,6 @@ router.post("/search", async (req: Request, res: Response) => {
       });
     }
 
-    const usageCheck = await checkExtensionUsage(user.id);
-    if (!usageCheck.allowed) {
-      return res.status(403).json({ 
-        success: false, 
-        message: usageCheck.message,
-        usage: {
-          remaining: usageCheck.remaining,
-          limit: usageCheck.limit,
-        }
-      });
-    }
-
     const { query, limit = 10 } = req.body;
     
     if (!query || typeof query !== "string") {
@@ -268,10 +181,6 @@ router.post("/search", async (req: Request, res: Response) => {
       page: 1,
     });
 
-    await incrementExtensionUsage(user.id);
-
-    const updatedUsage = await checkExtensionUsage(user.id);
-
     res.json({
       success: true,
       contacts: contacts.map(c => ({
@@ -284,8 +193,9 @@ router.post("/search", async (req: Request, res: Response) => {
       })),
       count: contacts.length,
       usage: {
-        remaining: updatedUsage.remaining,
-        limit: updatedUsage.limit,
+        remaining: null,
+        limit: null,
+        unlimited: true,
       },
     });
   } catch (error) {
