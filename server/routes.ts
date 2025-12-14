@@ -16,6 +16,7 @@ import { validateApiKey, generateApiKey, hashApiKey } from "./api-auth";
 import { apiV1Router } from "./api-v1-routes";
 import { API_SCOPES } from "./api-v1-middleware";
 import { wsHub } from "./ws-hub";
+import { extensionRouter } from "./extension-routes";
 import fs from "fs";
 import path from "path";
 
@@ -58,6 +59,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register API v1 routes
   app.use("/api/v1", apiV1Router);
   console.log("✅ API v1 routes registered at /api/v1");
+
+  // Register Chrome extension routes
+  app.use("/api/extension", extensionRouter);
+  console.log("✅ Chrome extension routes registered at /api/extension");
 
   // Authentication routes
   app.post("/api/login", async (req, res) => {
