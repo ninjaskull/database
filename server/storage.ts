@@ -15,6 +15,7 @@ import {
   databaseMetrics,
   archivedRecords,
   bulkOperationJobs,
+  subscriptionPlans,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -49,6 +50,8 @@ import {
   type BulkOperationJob,
   type InsertBulkOperationJob,
   type BulkProgressEvent,
+  type SubscriptionPlan,
+  type InsertSubscriptionPlan,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
@@ -224,6 +227,13 @@ export interface IStorage {
     growthMetrics: { contactsThisWeek: number; companiesThisWeek: number; };
     recentActivity: { imports: number; enrichments: number; apiRequests: number; };
   }>;
+
+  // Subscription plan operations
+  getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
+  getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
+  getSubscriptionPlanByName(name: string): Promise<SubscriptionPlan | undefined>;
+  createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
+  updateSubscriptionPlan(id: string, updates: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan | undefined>;
 }
 
 // Utility function to generate full name from first and last name
@@ -3120,6 +3130,49 @@ export class DatabaseStorage implements IStorage {
     }
     
     return { imported, duplicates, failed };
+  }
+
+  // ============ SUBSCRIPTION PLAN OPERATIONS ============
+
+  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    return await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.isActive, true))
+      .orderBy(asc(subscriptionPlans.sortOrder));
+  }
+
+  async getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined> {
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, id));
+    return plan || undefined;
+  }
+
+  async getSubscriptionPlanByName(name: string): Promise<SubscriptionPlan | undefined> {
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.name, name));
+    return plan || undefined;
+  }
+
+  async createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
+    const [created] = await db
+      .insert(subscriptionPlans)
+      .values(plan)
+      .returning();
+    return created;
+  }
+
+  async updateSubscriptionPlan(id: string, updates: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan | undefined> {
+    const [updated] = await db
+      .update(subscriptionPlans)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(subscriptionPlans.id, id))
+      .returning();
+    return updated || undefined;
   }
 }
 
