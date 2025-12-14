@@ -43,15 +43,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize default user
   await initializeDefaultUser();
   
-  // Fix any existing contacts with empty full names on startup
-  try {
-    const fixedCount = await storage.fixEmptyFullNames();
-    if (fixedCount > 0) {
-      console.log(`✅ Fixed ${fixedCount} contacts with empty full names on startup`);
+  // Fix any existing contacts with empty full names in the background (non-blocking)
+  setImmediate(async () => {
+    try {
+      const fixedCount = await storage.fixEmptyFullNames();
+      if (fixedCount > 0) {
+        console.log(`✅ Fixed ${fixedCount} contacts with empty full names`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fix empty full names:', error);
     }
-  } catch (error) {
-    console.error('❌ Failed to fix empty full names on startup:', error);
-  }
+  });
 
   // Register API v1 routes
   app.use("/api/v1", apiV1Router);
