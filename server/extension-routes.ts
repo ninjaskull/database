@@ -1,9 +1,21 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { validateSession } from "./auth";
 import { z } from "zod";
 
 const router = Router();
+
+// CORS middleware for Chrome extension requests
+router.use((req: Request, res: Response, next: NextFunction) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 const linkedinLookupSchema = z.object({
   linkedinUrl: z.string().url().refine(
