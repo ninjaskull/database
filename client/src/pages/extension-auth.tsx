@@ -42,11 +42,27 @@ export default function ExtensionAuthPage() {
       "*"
     );
 
+    const sendMultipleTimes = () => {
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          window.postMessage(
+            {
+              type: "CRM_EXTENSION_AUTH",
+              token: token,
+              apiBaseUrl: apiBaseUrl,
+            },
+            "*"
+          );
+        }, i * 500);
+      }
+    };
+    sendMultipleTimes();
+
     setStatus("success");
     
     setTimeout(() => {
       setLocation("/");
-    }, 2500);
+    }, 3000);
   }, [setLocation]);
 
   return (

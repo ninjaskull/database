@@ -1,5 +1,3 @@
-const API_BASE_URL = "";
-
 const loadingView = document.getElementById("loading-view");
 const loginView = document.getElementById("login-view");
 const mainView = document.getElementById("main-view");
@@ -24,26 +22,26 @@ const noResultsText = document.getElementById("no-results-text");
 const errorMessage = document.getElementById("error-message");
 const errorText = document.getElementById("error-text");
 
+const dashboardUrlInput = document.getElementById("dashboard-url");
+const connectBtn = document.getElementById("connect-btn");
 const openDashboardBtn = document.getElementById("open-dashboard-btn");
 const logoutBtn = document.getElementById("logout-btn");
 
 let currentLinkedInUrl = null;
 
-async function getApiBaseUrl() {
-  const result = await chrome.storage.local.get(["apiBaseUrl"]);
-  return result.apiBaseUrl || API_BASE_URL;
+async function getStoredAuth() {
+  const result = await chrome.storage.local.get(["authToken", "apiBaseUrl"]);
+  return {
+    token: result.authToken,
+    apiBaseUrl: result.apiBaseUrl || "",
+  };
 }
 
-async function getAuthToken() {
-  const result = await chrome.storage.local.get(["authToken"]);
-  return result.authToken;
+async function setStoredAuth(token, apiBaseUrl) {
+  await chrome.storage.local.set({ authToken: token, apiBaseUrl: apiBaseUrl });
 }
 
-async function setAuthToken(token) {
-  await chrome.storage.local.set({ authToken: token });
-}
-
-async function clearAuthToken() {
+async function clearStoredAuth() {
   await chrome.storage.local.remove(["authToken"]);
 }
 
@@ -87,15 +85,18 @@ function updateUsage(used, limit) {
 }
 
 async function validateSession() {
-  const token = await getAuthToken();
-  if (!token) {
+  const { token, apiBaseUrl } = await getStoredAuth();
+  
+  if (!token || !apiBaseUrl) {
+    if (apiBaseUrl && dashboardUrlInput) {
+      dashboardUrlInput.value = apiBaseUrl;
+    }
     showView("login");
     return null;
   }
 
   try {
-    const baseUrl = await getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/extension/validate`, {
+    const response = await fetch(`${apiBaseUrl}/api/extension/validate`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -106,20 +107,23 @@ async function validateSession() {
     if (data.valid) {
       return data;
     } else {
-      await clearAuthToken();
+      await clearStoredAuth();
+      if (dashboardUrlInput) dashboardUrlInput.value = apiBaseUrl;
       showView("login");
       return null;
     }
   } catch (error) {
     console.error("Validation error:", error);
+    if (dashboardUrlInput) dashboardUrlInput.value = apiBaseUrl;
     showView("login");
     return null;
   }
 }
 
 async function lookupLinkedIn(url) {
-  const token = await getAuthToken();
-  if (!token) {
+  const { token, apiBaseUrl } = await getStoredAuth();
+  
+  if (!token || !apiBaseUrl) {
     showView("login");
     return;
   }
@@ -129,8 +133,7 @@ async function lookupLinkedIn(url) {
   lookupBtn.textContent = "Looking up...";
 
   try {
-    const baseUrl = await getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/extension/lookup`, {
+    const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -142,7 +145,7 @@ async function lookupLinkedIn(url) {
     const data = await response.json();
 
     if (response.status === 401) {
-      await clearAuthToken();
+      await clearStoredAuth();
       showView("login");
       return;
     }
@@ -175,8 +178,9 @@ async function lookupLinkedIn(url) {
 }
 
 async function searchContacts(query) {
-  const token = await getAuthToken();
-  if (!token) {
+  const { token, apiBaseUrl } = await getStoredAuth();
+  
+  if (!token || !apiBaseUrl) {
     showView("login");
     return;
   }
@@ -185,8 +189,7 @@ async function searchContacts(query) {
   searchBtn.disabled = true;
 
   try {
-    const baseUrl = await getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/extension/search`, {
+    const response = await fetch(`${apiBaseUrl}/api/extension/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -198,7 +201,7 @@ async function searchContacts(query) {
     const data = await response.json();
 
     if (response.status === 401) {
-      await clearAuthToken();
+      await clearStoredAuth();
       showView("login");
       return;
     }
@@ -314,6 +317,11 @@ async function checkCurrentTab() {
 async function init() {
   showView("loading");
 
+  const { apiBaseUrl } = await getStoredAuth();
+  if (apiBaseUrl && dashboardUrlInput) {
+    dashboardUrlInput.value = apiBaseUrl;
+  }
+
   const sessionData = await validateSession();
 
   if (sessionData) {
@@ -352,21 +360,51 @@ backBtn.addEventListener("click", () => {
   hideAllResults();
 });
 
+connectBtn.addEventListener("click", async () => {
+  let url = dashboardUrlInput.value.trim();
+  
+  if (!url) {
+    dashboardUrlInput.focus();
+    return;
+  }
+
+  if (!url.startsWith("http")) {
+    url = "https://" + url;
+  }
+
+  url = url.replace(/\/$/, "");
+
+  await chrome.storage.local.set({ apiBaseUrl: url });
+  
+  const authWindow = window.open(`${url}/extension-auth`, "_blank");
+  
+  const checkInterval = setInterval(async () => {
+    const { authToken } = await chrome.storage.local.get(["authToken"]);
+    if (authToken) {
+      clearInterval(checkInterval);
+      init();
+    }
+  }, 1000);
+  
+  setTimeout(() => clearInterval(checkInterval), 60000);
+});
+
 openDashboardBtn.addEventListener("click", async () => {
-  const baseUrl = await getApiBaseUrl();
-  chrome.tabs.create({ url: baseUrl || "https://your-app-url.replit.app" });
+  const { apiBaseUrl } = await getStoredAuth();
+  
+  if (apiBaseUrl) {
+    chrome.tabs.create({ url: apiBaseUrl });
+  }
 });
 
 logoutBtn.addEventListener("click", async () => {
-  await clearAuthToken();
+  await clearStoredAuth();
   showView("login");
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "AUTH_TOKEN") {
-    setAuthToken(message.token).then(() => {
-      init();
-    });
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === "local" && (changes.authToken || changes.apiBaseUrl)) {
+    init();
   }
 });
 

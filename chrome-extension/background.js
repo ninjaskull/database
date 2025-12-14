@@ -3,6 +3,17 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "STORE_AUTH") {
+    chrome.storage.local.set({ 
+      authToken: message.token,
+      apiBaseUrl: message.apiBaseUrl 
+    }, () => {
+      console.log("Auth stored from dashboard");
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+
   if (message.type === "STORE_TOKEN") {
     chrome.storage.local.set({ authToken: message.token }, () => {
       sendResponse({ success: true });
@@ -24,7 +35,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "CLEAR_TOKEN") {
+  if (message.type === "CLEAR_TOKEN" || message.type === "CLEAR_AUTH") {
     chrome.storage.local.remove(["authToken"], () => {
       sendResponse({ success: true });
     });
@@ -34,6 +45,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "LINKEDIN_PROFILE_DETECTED") {
     chrome.action.setBadgeText({ text: "1", tabId: sender.tab?.id });
     chrome.action.setBadgeBackgroundColor({ color: "#3b82f6", tabId: sender.tab?.id });
+  }
+
+  if (message.type === "AUTH_TOKEN") {
+    chrome.storage.local.set({ 
+      authToken: message.token,
+      apiBaseUrl: message.apiBaseUrl 
+    }, () => {
+      console.log("Auth stored via external message");
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+});
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (message.type === "AUTH_TOKEN") {
+    chrome.storage.local.set({ 
+      authToken: message.token,
+      apiBaseUrl: message.apiBaseUrl 
+    }, () => {
+      console.log("Auth stored via external message from:", sender.origin);
+      sendResponse({ success: true });
+    });
+    return true;
   }
 });
 

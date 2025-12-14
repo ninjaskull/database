@@ -27,8 +27,16 @@
           </svg>
         </div>
         <h2>Sign In Required</h2>
-        <p>Please sign in to your dashboard to use the extension.</p>
-        <button id="open-dashboard-btn" class="btn btn-primary">Open Dashboard</button>
+        <p>Connect to your CRM dashboard to use the extension.</p>
+        
+        <div class="config-section">
+          <label for="dashboard-url">Dashboard URL</label>
+          <input type="url" id="dashboard-url" placeholder="https://your-app.replit.app" />
+          <small>Enter your CRM dashboard URL</small>
+        </div>
+        
+        <button id="connect-btn" class="btn btn-primary">Connect to Dashboard</button>
+        <p class="help-text">You'll be redirected to sign in and authorize the extension.</p>
       </div>
     </div>
 
@@ -107,6 +115,17 @@
 
       <div id="error-message" class="error-message hidden">
         <p id="error-text"></p>
+      </div>
+
+      <div class="footer-actions">
+        <button id="open-dashboard-btn" class="btn-text btn-small">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15,3 21,3 21,9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          Open Dashboard
+        </button>
       </div>
     </div>
   </div>
