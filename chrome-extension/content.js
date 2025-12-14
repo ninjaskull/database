@@ -68,14 +68,14 @@
       try {
         const result = await chrome.storage.local.get(["authToken", "apiBaseUrl"]);
         
-        if (!result.authToken) {
+        if (!result.authToken || !result.apiBaseUrl) {
           showNotification("Please sign in to use this feature", "warning");
           btn.disabled = false;
           resetButton();
           return;
         }
 
-        const response = await fetch(`${result.apiBaseUrl || ""}/api/extension/lookup`, {
+        const response = await fetch(`${result.apiBaseUrl}/api/extension/lookup`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
