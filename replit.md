@@ -2,7 +2,18 @@
 
 This is a modern full-stack CRM application for managing contact databases. Built with React on the frontend, Express on the backend, and PostgreSQL with Drizzle ORM for data management. The application features comprehensive contact management with data enrichment capabilities, CSV import functionality, and real-time activity tracking.
 
-## Recent Changes (Dec 1, 2025)
+## Recent Changes (Dec 14, 2025)
+- **Chrome Extension Documentation**: Created comprehensive technical documentation at `CHROME_EXTENSION_DOCUMENTATION.md` covering:
+  - Complete authentication flow between dashboard and extension
+  - All extension API endpoints (`/api/extension/validate`, `/lookup`, `/search`)
+  - Manifest V3 configuration and permissions
+  - File-by-file implementation guide with complete code
+  - Security best practices (token storage, CORS, validation)
+  - Multi-user subscription plan system with usage limits
+  - Deployment and Chrome Web Store submission guide
+  - Testing guidelines and troubleshooting
+
+## Previous Changes (Dec 1, 2025)
 - **Enhanced Smart Company Auto-Fill System**: Completely rebuilt company matching with intelligent algorithms:
   - Email domain extraction (filters out personal providers like Gmail, Yahoo)
   - Company name normalization (removes Inc, LLC, Ltd suffixes for better matching)
