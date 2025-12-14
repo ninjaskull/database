@@ -1,0 +1,65 @@
+I want to build a Chrome extension that uses this existing database to search and retrieve prospect details based on LinkedIn profiles.
+
+The system should include a well-defined authentication flow, secure API communication, and role-based access control. The existing dashboard application will act as the central control panel for the Chrome extension.
+
+Core behavior requirements
+
+If a user is logged in to the dashboard, the Chrome extension should automatically recognize the session and allow access to the database through authorized API calls.
+
+If the user is not logged in, the Chrome extension must prompt the user to sign in through the dashboard first before any functionality is enabled.
+
+The Chrome extension should not store sensitive credentials locally and must rely on secure tokens issued by the backend.
+
+Chrome extension requirements
+
+Authenticate users using tokens issued by the backend (shared with the dashboard).
+
+Make authorized API calls to fetch prospect data using LinkedIn profile URLs or identifiers.
+
+Handle session expiration, invalid tokens, and logout events gracefully.
+
+Support multiple users with isolated data access.
+
+Enforce plan-based limitations (e.g., request limits, feature access).
+
+Dashboard / backend application requirements
+
+Act as the single source of truth for authentication and authorization.
+
+Expose secure APIs for:
+
+User authentication
+
+Prospect search and retrieval
+
+Usage tracking and rate limiting
+
+Support multi-user accounts with subscription plans (free, paid, enterprise, etc.).
+
+Implement plan-based access control (API limits, data visibility, feature toggles).
+
+Allow administrators to manage users, plans, and permissions.
+
+Multi-user plan considerations
+
+To support a multi-user, multi-plan system, the application must include:
+
+User roles (admin, member, read-only, etc.)
+
+Organization or workspace-level data isolation
+
+Per-user and per-plan API usage limits
+
+Centralized logging and audit trails
+
+Deliverables
+
+Architecture plan for authentication and session sharing between the dashboard and Chrome extension
+
+API design (endpoints, request/response formats, authorization headers)
+
+Required backend changes to support multi-user plans
+
+Chrome extension structure (background script, content script, popup, token handling)
+
+Security considerations (token storage, CORS, rate limiting)
