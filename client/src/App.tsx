@@ -12,6 +12,7 @@ import SettingsPage from "@/pages/settings";
 import Analytics from "@/pages/analytics";
 import LinkedInSearch from "@/pages/linkedin-search";
 import DatabaseManagement from "@/pages/database-management";
+import ExtensionAuth from "@/pages/extension-auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import { useAuth } from "@/hooks/useAuth";
@@ -55,6 +56,7 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/database" component={DatabaseManagement} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/extension-auth" component={ExtensionAuth} />
       <Route component={NotFound} />
     </Switch>
   );
