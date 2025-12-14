@@ -177,16 +177,73 @@ export const importJobs = pgTable("import_jobs", {
   index("import_jobs_created_at_idx").on(table.createdAt),
 ]);
 
+// Subscription plans table - defines available plans and their limits
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // 'free', 'starter', 'professional', 'enterprise'
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  
+  // API Limits
+  dailyApiLimit: integer("daily_api_limit").default(100),
+  monthlyApiLimit: integer("monthly_api_limit").default(1000),
+  
+  // Feature toggles
+  canExportData: boolean("can_export_data").default(false),
+  canBulkImport: boolean("can_bulk_import").default(false),
+  canUseEnrichment: boolean("can_use_enrichment").default(false),
+  canAccessAdvancedSearch: boolean("can_access_advanced_search").default(false),
+  canCreateApiKeys: boolean("can_create_api_keys").default(false),
+  maxApiKeys: integer("max_api_keys").default(1),
+  
+  // Chrome extension specific
+  canUseChromeExtension: boolean("can_use_chrome_extension").default(true),
+  extensionLookupLimit: integer("extension_lookup_limit").default(50), // per day
+  
+  // Pricing (for display purposes)
+  priceMonthly: decimal("price_monthly", { precision: 10, scale: 2 }).default("0"),
+  priceCurrency: text("price_currency").default("USD"),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("subscription_plans_name_idx").on(table.name),
+  index("subscription_plans_is_active_idx").on(table.isActive),
+]);
+
 // User authentication table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").unique().notNull(),
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
+  
+  // Role and subscription
+  role: text("role").default("member"), // 'admin', 'member', 'readonly'
+  planId: varchar("plan_id").references(() => subscriptionPlans.id),
+  planExpiresAt: timestamp("plan_expires_at"),
+  
+  // Usage tracking
+  dailyApiUsage: integer("daily_api_usage").default(0),
+  monthlyApiUsage: integer("monthly_api_usage").default(0),
+  dailyExtensionUsage: integer("daily_extension_usage").default(0),
+  usageResetDate: timestamp("usage_reset_date").defaultNow(),
+  monthlyResetDate: timestamp("monthly_reset_date").defaultNow(),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("users_created_at_idx").on(table.createdAt),
+  index("users_role_idx").on(table.role),
+  index("users_plan_id_idx").on(table.planId),
+  index("users_is_active_idx").on(table.isActive),
 ]);
 
 // Session storage table
@@ -601,6 +658,12 @@ export const insertBulkOperationJobSchema = createInsertSchema(bulkOperationJobs
   finishedAt: true,
 });
 
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -654,6 +717,8 @@ export type ArchivedRecord = typeof archivedRecords.$inferSelect;
 export type InsertArchivedRecord = z.infer<typeof insertArchivedRecordSchema>;
 export type BulkOperationJob = typeof bulkOperationJobs.$inferSelect;
 export type InsertBulkOperationJob = z.infer<typeof insertBulkOperationJobSchema>;
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
 
 // Bulk operation progress event types
 export interface BulkProgressEvent {

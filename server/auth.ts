@@ -108,21 +108,115 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 }
 
+// Initialize default subscription plans
+export async function initializeSubscriptionPlans(): Promise<void> {
+  try {
+    const plans = await storage.getSubscriptionPlans();
+    if (plans.length === 0) {
+      // Create default plans
+      await storage.createSubscriptionPlan({
+        name: "free",
+        displayName: "Free",
+        description: "Basic access for individual users",
+        dailyApiLimit: 50,
+        monthlyApiLimit: 500,
+        canExportData: false,
+        canBulkImport: false,
+        canUseEnrichment: false,
+        canAccessAdvancedSearch: false,
+        canCreateApiKeys: true,
+        maxApiKeys: 1,
+        canUseChromeExtension: true,
+        extensionLookupLimit: 25,
+        priceMonthly: "0",
+        sortOrder: 1,
+      });
+      
+      await storage.createSubscriptionPlan({
+        name: "starter",
+        displayName: "Starter",
+        description: "For small teams getting started",
+        dailyApiLimit: 200,
+        monthlyApiLimit: 3000,
+        canExportData: true,
+        canBulkImport: true,
+        canUseEnrichment: false,
+        canAccessAdvancedSearch: true,
+        canCreateApiKeys: true,
+        maxApiKeys: 3,
+        canUseChromeExtension: true,
+        extensionLookupLimit: 100,
+        priceMonthly: "29",
+        sortOrder: 2,
+      });
+      
+      await storage.createSubscriptionPlan({
+        name: "professional",
+        displayName: "Professional",
+        description: "For growing sales teams",
+        dailyApiLimit: 1000,
+        monthlyApiLimit: 20000,
+        canExportData: true,
+        canBulkImport: true,
+        canUseEnrichment: true,
+        canAccessAdvancedSearch: true,
+        canCreateApiKeys: true,
+        maxApiKeys: 10,
+        canUseChromeExtension: true,
+        extensionLookupLimit: 500,
+        priceMonthly: "99",
+        sortOrder: 3,
+      });
+      
+      await storage.createSubscriptionPlan({
+        name: "enterprise",
+        displayName: "Enterprise",
+        description: "Unlimited access for large organizations",
+        dailyApiLimit: 10000,
+        monthlyApiLimit: 100000,
+        canExportData: true,
+        canBulkImport: true,
+        canUseEnrichment: true,
+        canAccessAdvancedSearch: true,
+        canCreateApiKeys: true,
+        maxApiKeys: 50,
+        canUseChromeExtension: true,
+        extensionLookupLimit: 2000,
+        priceMonthly: "299",
+        sortOrder: 4,
+      });
+      
+      console.log('✅ Default subscription plans created');
+    }
+  } catch (error) {
+    console.error('Error initializing subscription plans:', error);
+  }
+}
+
 // Initialize default user
 export async function initializeDefaultUser(): Promise<void> {
   try {
+    // Initialize subscription plans first
+    await initializeSubscriptionPlans();
+    
     const defaultEmail = "amit@fallowl.com";
     const defaultPassword = "DemonFlare@254039";
     
     const existingUser = await storage.getUserByEmail(defaultEmail);
     if (!existingUser) {
       const passwordHash = await hashPassword(defaultPassword);
+      
+      // Get the free plan to assign by default
+      const freePlan = await storage.getSubscriptionPlanByName("free");
+      
       await storage.createUser({
         email: defaultEmail,
         passwordHash,
         name: "Amit",
+        role: "admin",
+        planId: freePlan?.id,
       });
-      console.log('Default user created successfully');
+      console.log('✅ Default admin user created');
     }
   } catch (error) {
     console.error('Error initializing default user:', error);
