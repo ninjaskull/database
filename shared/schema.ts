@@ -485,6 +485,12 @@ export const bulkOperationJobs = pgTable("bulk_operation_jobs", {
   errors: jsonb("errors").default(sql`'[]'::jsonb`), // Array of error objects
   activityLog: jsonb("activity_log").default(sql`'[]'::jsonb`), // Real-time activity feed
   
+  // Batch processing metadata
+  batchSize: integer("batch_size").default(200),
+  batchesTotal: integer("batches_total").default(0),
+  batchesCompleted: integer("batches_completed").default(0),
+  currentBatch: integer("current_batch").default(0),
+  
   // Timing
   startedAt: timestamp("started_at"),
   finishedAt: timestamp("finished_at"),
@@ -733,6 +739,12 @@ export interface BulkProgressEvent {
     failed: number;
     skipped: number;
     matched: number;
+  };
+  batch?: {
+    size: number;
+    total: number;
+    completed: number;
+    current: number;
   };
   current?: {
     id: string;
