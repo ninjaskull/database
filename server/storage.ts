@@ -2696,6 +2696,20 @@ export class DatabaseStorage implements IStorage {
     const total = unmatchedContacts.length;
     
     if (total === 0) {
+      // Still need to update job status and send progress for empty case
+      await this.updateBulkOperationJob(jobId, { 
+        totalItems: 0, 
+        processedItems: 0,
+        status: 'completed',
+        startedAt: new Date(),
+        finishedAt: new Date(),
+      });
+      onProgress({
+        operationType: 'bulk-match',
+        status: 'completed',
+        totals: { total: 0, processed: 0, success: 0, failed: 0, skipped: 0, matched: 0 },
+        message: 'No unmatched contacts to process',
+      });
       return { matched: 0, unmatched: 0, skipped: 0 };
     }
     
