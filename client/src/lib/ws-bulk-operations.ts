@@ -258,7 +258,7 @@ export function useBulkOperationProgress(options: UseBulkOperationProgressOption
   const [state, setState] = useState<BulkOperationProgressState>({
     isConnected: false,
     operationType: '',
-    status: 'queued',
+    status: 'idle',
     total: 0,
     processed: 0,
     success: 0,
@@ -408,7 +408,7 @@ export function useBulkOperationProgress(options: UseBulkOperationProgressOption
     if (!jobId) {
       setState(prev => ({
         ...prev,
-        status: 'queued',
+        status: 'idle',
         total: 0,
         processed: 0,
         success: 0,
