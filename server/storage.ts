@@ -969,12 +969,13 @@ export class DatabaseStorage implements IStorage {
 
     const lowercaseEmails = emails.map(e => e.toLowerCase());
     
+    // Use inArray with lowercased email for proper PostgreSQL array query
     const foundContacts = await db
       .select()
       .from(contacts)
       .where(and(
         eq(contacts.isDeleted, false),
-        sql`LOWER(${contacts.email}) = ANY(${lowercaseEmails})`
+        inArray(sql`LOWER(${contacts.email})`, lowercaseEmails)
       ));
 
     const duplicateMap = new Map<string, Contact>();
