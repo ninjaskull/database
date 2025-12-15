@@ -42,13 +42,14 @@ class WebSocketHub {
   private importSubscriptions = new Map<string, Set<WebSocket>>();
   private importClientJobs = new Map<WebSocket, Set<string>>();
   private importLastBroadcast = new Map<string, number>();
+  private importProgressCache = new Map<string, ImportProgressEvent>(); // Cache latest progress for late joiners
   
   // Bulk operations tracking
   private bulkSubscriptions = new Map<string, Set<WebSocket>>();
   private bulkClientJobs = new Map<WebSocket, Set<string>>();
   private bulkLastBroadcast = new Map<string, number>();
   
-  private throttleMs = 150; // Throttle broadcasts to avoid flooding (reduced for snappier updates)
+  private throttleMs = 100; // Throttle broadcasts to avoid flooding (reduced for snappier updates)
 
   /**
    * Initialize WebSocket servers bound to existing HTTP server
@@ -129,6 +130,14 @@ class WebSocketHub {
         subscriptions.get(jobId)!.add(ws);
         clientJobs.get(ws)?.add(jobId);
         ws.send(JSON.stringify({ type: 'subscribed', jobId, channel }));
+        
+        // Send cached progress immediately to late-joining subscribers (import channel only)
+        if (channel === 'import') {
+          const cachedProgress = this.importProgressCache.get(jobId);
+          if (cachedProgress) {
+            ws.send(JSON.stringify(cachedProgress));
+          }
+        }
         break;
       case 'unsubscribe':
         subscriptions.get(jobId)?.delete(ws);
@@ -170,17 +179,7 @@ class WebSocketHub {
     const now = Date.now();
     const lastTime = this.importLastBroadcast.get(jobId) || 0;
     
-    if (!force && now - lastTime < this.throttleMs) {
-      return;
-    }
-    
-    this.importLastBroadcast.set(jobId, now);
-    
-    const subscribers = this.importSubscriptions.get(jobId);
-    if (!subscribers || subscribers.size === 0) {
-      return;
-    }
-
+    // Always cache the progress (even if throttled) so late joiners get latest state
     const event: ImportProgressEvent = {
       type: 'import-progress',
       jobId,
@@ -195,6 +194,20 @@ class WebSocketHub {
       completedAt: progress.completedAt,
       errors: progress.errors,
     };
+    
+    // Cache progress for late-joining subscribers
+    this.importProgressCache.set(jobId, event);
+    
+    if (!force && now - lastTime < this.throttleMs) {
+      return;
+    }
+    
+    this.importLastBroadcast.set(jobId, now);
+    
+    const subscribers = this.importSubscriptions.get(jobId);
+    if (!subscribers || subscribers.size === 0) {
+      return;
+    }
 
     this.sendToSubscribers(subscribers, event);
   }
@@ -260,7 +273,8 @@ class WebSocketHub {
     setTimeout(() => {
       this.importLastBroadcast.delete(jobId);
       this.importSubscriptions.delete(jobId);
-    }, 5000);
+      this.importProgressCache.delete(jobId);
+    }, 10000); // Longer timeout to allow late-joining clients to get completion
   }
 
   /**
@@ -276,7 +290,8 @@ class WebSocketHub {
     setTimeout(() => {
       this.importLastBroadcast.delete(jobId);
       this.importSubscriptions.delete(jobId);
-    }, 5000);
+      this.importProgressCache.delete(jobId);
+    }, 10000);
   }
 
   /**
@@ -351,6 +366,7 @@ class WebSocketHub {
       this.importSubscriptions.clear();
       this.importClientJobs.clear();
       this.importLastBroadcast.clear();
+      this.importProgressCache.clear();
     }
     if (this.bulkWss) {
       this.bulkWss.close();

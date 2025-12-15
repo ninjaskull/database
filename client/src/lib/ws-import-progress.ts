@@ -357,8 +357,11 @@ export function useImportProgress(options: UseImportProgressOptions): ImportProg
       error: event.status === 'failed' ? (event.message || 'Import failed') : null
     }));
 
-    // Stop polling when WS is active
-    stopPolling();
+    // Only stop polling if job is complete - otherwise keep both WS and polling active
+    // This ensures we always have a fallback if WS stalls
+    if (event.status === 'completed' || event.status === 'failed') {
+      stopPolling();
+    }
 
     if (event.status === 'completed') {
       onComplete?.(event);
