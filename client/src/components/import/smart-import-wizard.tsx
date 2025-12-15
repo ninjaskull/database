@@ -123,7 +123,15 @@ export function SmartImportWizard() {
   const { data: importJob } = useQuery<ImportJob>({
     queryKey: ['import', jobId],
     queryFn: async () => {
-      const response = await fetch(`/api/import/${jobId}`);
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/import/${jobId}`, {
+        credentials: 'include',
+        headers,
+      });
       if (!response.ok) throw new Error('Failed to fetch import status');
       return response.json();
     },
@@ -142,9 +150,16 @@ export function SmartImportWizard() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('csv', file);  // Backend expects 'csv' field name
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const response = await fetch('/api/import/auto-map', {
         method: 'POST',
         body: formData,
+        credentials: 'include',
+        headers,
       });
       if (!response.ok) {
         const errorText = await response.text();
