@@ -353,19 +353,43 @@ export function SmartImportWizard() {
   }
 
   if (step === 'progress') {
-    // Use WebSocket progress data if available, fallback to importJob
-    const progressData = wsProgress.processedRows > 0 ? {
+    const hasWsData = wsProgress.totalRows > 0 || wsProgress.processedRows > 0;
+    const hasPollingData = importJob && ((importJob.totalRows ?? 0) > 0 || (importJob.processedRows ?? 0) > 0);
+    
+    const progressData = hasWsData ? {
       totalRows: wsProgress.totalRows,
       processedRows: wsProgress.processedRows,
       successfulRows: wsProgress.successfulRows,
       duplicateRows: wsProgress.duplicateRows,
       errorRows: wsProgress.errorRows,
       message: wsProgress.message,
-    } : importJob;
+      status: wsProgress.status,
+    } : hasPollingData ? {
+      totalRows: importJob.totalRows || 0,
+      processedRows: importJob.processedRows || 0,
+      successfulRows: importJob.successfulRows || 0,
+      duplicateRows: importJob.duplicateRows || 0,
+      errorRows: importJob.errorRows || 0,
+      message: `Processing ${importJob.processedRows || 0} of ${importJob.totalRows || 0} rows...`,
+      status: importJob.status,
+    } : {
+      totalRows: 0,
+      processedRows: 0,
+      successfulRows: 0,
+      duplicateRows: 0,
+      errorRows: 0,
+      message: 'Initializing import...',
+      status: 'pending',
+    };
     
-    const progressPercent = progressData && progressData.processedRows && progressData.totalRows 
+    const progressPercent = progressData.totalRows > 0 
       ? Math.round((progressData.processedRows / progressData.totalRows) * 100) 
       : 0;
+    
+    const statusMessage = progressData.message || 
+      (progressData.processedRows > 0 
+        ? `Processing ${progressData.processedRows.toLocaleString()} of ${progressData.totalRows.toLocaleString()} contacts...`
+        : 'Starting import...');
     
     return (
       <Card className="w-full max-w-4xl mx-auto">
@@ -374,52 +398,52 @@ export function SmartImportWizard() {
             <Database className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           <CardTitle className="text-2xl">Processing Import</CardTitle>
-          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mt-2">
             {wsProgress.isConnected ? (
               <>
                 <Wifi className="w-4 h-4 text-green-500" />
-                <span>Real-time updates active</span>
+                <span>Live updates</span>
               </>
             ) : (
               <>
-                <WifiOff className="w-4 h-4 text-gray-400" />
-                <span>Using polling updates</span>
+                <WifiOff className="w-4 h-4 text-yellow-500" />
+                <span>Updating...</span>
               </>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>Progress</span>
-              <span>{progressPercent}%</span>
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm font-medium">
+              <span>{statusMessage}</span>
+              <span className="text-blue-600">{progressPercent}%</span>
             </div>
-            <Progress value={progressPercent} className="h-3" />
-            {wsProgress.message && (
-              <p className="text-sm text-gray-500 text-center mt-2">{wsProgress.message}</p>
-            )}
+            <Progress value={progressPercent} className="h-4" />
+            <div className="text-center text-sm text-gray-500">
+              {progressData.processedRows > 0 && (
+                <span>{progressData.processedRows.toLocaleString()} / {progressData.totalRows.toLocaleString()} rows processed</span>
+              )}
+            </div>
           </div>
           
-          {progressData && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center" data-testid="progress-processed">
-                <div className="text-lg font-semibold">{progressData.processedRows || 0}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">Processed</div>
-              </div>
-              <div className="text-center" data-testid="progress-success">
-                <div className="text-lg font-semibold text-green-600">{progressData.successfulRows || 0}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">Success</div>
-              </div>
-              <div className="text-center" data-testid="progress-duplicates">
-                <div className="text-lg font-semibold text-yellow-600">{progressData.duplicateRows || 0}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">Duplicates</div>
-              </div>
-              <div className="text-center" data-testid="progress-errors">
-                <div className="text-lg font-semibold text-red-600">{progressData.errorRows || 0}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400">Errors</div>
-              </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
+            <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg" data-testid="progress-processed">
+              <div className="text-2xl font-bold">{progressData.processedRows.toLocaleString()}</div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">Processed</div>
             </div>
-          )}
+            <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg" data-testid="progress-success">
+              <div className="text-2xl font-bold text-green-600">{progressData.successfulRows.toLocaleString()}</div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">Imported</div>
+            </div>
+            <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg" data-testid="progress-duplicates">
+              <div className="text-2xl font-bold text-yellow-600">{progressData.duplicateRows.toLocaleString()}</div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">Duplicates</div>
+            </div>
+            <div className="text-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg" data-testid="progress-errors">
+              <div className="text-2xl font-bold text-red-600">{progressData.errorRows.toLocaleString()}</div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">Errors</div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     );

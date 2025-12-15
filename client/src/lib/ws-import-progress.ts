@@ -1,9 +1,12 @@
 /**
  * WebSocket client for real-time import progress updates
+ * Robust implementation with proper connection management
  */
 
+import { useEffect, useState, useCallback, useRef } from 'react';
+
 export interface ImportProgressEvent {
-  type: 'import-progress' | 'connected' | 'subscribed' | 'unsubscribed' | 'error';
+  type: 'import-progress' | 'connected' | 'subscribed' | 'unsubscribed' | 'error' | 'pong';
   jobId?: string;
   status?: string;
   totalRows?: number;
@@ -24,53 +27,84 @@ class ImportProgressWebSocket {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
-  private subscriptions = new Map<string, Set<ProgressCallback>>();
+  private reconnectDelay = 2000;
+  
+  private activeCallbacks = new Map<string, Set<ProgressCallback>>();
+  private subscribedJobs = new Set<string>();
   private connectionCallbacks = new Set<ConnectionCallback>();
-  private pendingSubscriptions = new Set<string>();
+  
   private isConnecting = false;
   private isIntentionallyClosed = false;
+  private reconnectTimeoutId: number | null = null;
+  private connectionPromise: Promise<void> | null = null;
+  private pingIntervalId: number | null = null;
 
-  /**
-   * Connect to the WebSocket server
-   */
   connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) {
       return Promise.resolve();
     }
 
-    if (this.isConnecting) {
+    if (this.isConnecting && this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
       return new Promise((resolve) => {
-        const checkConnection = setInterval(() => {
+        const checkInterval = setInterval(() => {
           if (this.ws?.readyState === WebSocket.OPEN) {
-            clearInterval(checkConnection);
+            clearInterval(checkInterval);
+            resolve();
+          } else if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+            clearInterval(checkInterval);
             resolve();
           }
         }, 100);
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve();
+        }, 5000);
       });
     }
 
     this.isConnecting = true;
     this.isIntentionallyClosed = false;
 
-    return new Promise((resolve, reject) => {
+    this.connectionPromise = new Promise<void>((resolve, reject) => {
       try {
+        if (this.ws) {
+          try {
+            this.ws.close();
+          } catch (e) {}
+          this.ws = null;
+        }
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/import-progress`;
         
+        console.log('📡 Connecting to WebSocket:', wsUrl);
         this.ws = new WebSocket(wsUrl);
 
+        const timeout = setTimeout(() => {
+          if (this.ws?.readyState !== WebSocket.OPEN) {
+            console.warn('📡 WebSocket connection timeout');
+            try {
+              this.ws?.close();
+            } catch (e) {}
+            this.isConnecting = false;
+            this.connectionPromise = null;
+            reject(new Error('Connection timeout'));
+          }
+        }, 10000);
+
         this.ws.onopen = () => {
-          console.log('📡 WebSocket connected');
+          clearTimeout(timeout);
+          console.log('📡 WebSocket connected successfully');
           this.isConnecting = false;
           this.reconnectAttempts = 0;
           this.notifyConnectionStatus(true);
           
-          // Re-subscribe to pending subscriptions
-          this.pendingSubscriptions.forEach(jobId => {
-            this.sendSubscribe(jobId);
-          });
-          this.pendingSubscriptions.clear();
+          this.resubscribeAll();
+          this.startPingInterval();
           
           resolve();
         };
@@ -84,147 +118,218 @@ class ImportProgressWebSocket {
           }
         };
 
-        this.ws.onclose = () => {
-          console.log('📡 WebSocket disconnected');
+        this.ws.onclose = (event) => {
+          clearTimeout(timeout);
+          console.log('📡 WebSocket disconnected, code:', event.code);
           this.isConnecting = false;
+          this.connectionPromise = null;
+          this.subscribedJobs.clear();
+          this.stopPingInterval();
           this.notifyConnectionStatus(false);
           
-          if (!this.isIntentionallyClosed) {
-            this.attemptReconnect();
+          if (!this.isIntentionallyClosed && this.activeCallbacks.size > 0) {
+            this.scheduleReconnect();
           }
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          clearTimeout(timeout);
+          console.error('📡 WebSocket error');
           this.isConnecting = false;
-          reject(error);
+          this.connectionPromise = null;
         };
 
       } catch (error) {
         this.isConnecting = false;
+        this.connectionPromise = null;
         reject(error);
       }
     });
+
+    return this.connectionPromise;
   }
 
-  /**
-   * Disconnect from the WebSocket server
-   */
-  disconnect(): void {
-    this.isIntentionallyClosed = true;
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.subscriptions.clear();
-    this.pendingSubscriptions.clear();
-  }
-
-  /**
-   * Subscribe to progress updates for a specific job
-   */
-  subscribe(jobId: string, callback: ProgressCallback): () => void {
-    if (!this.subscriptions.has(jobId)) {
-      this.subscriptions.set(jobId, new Set());
-    }
-    this.subscriptions.get(jobId)!.add(callback);
-
-    // Connect and subscribe
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.sendSubscribe(jobId);
-    } else {
-      this.pendingSubscriptions.add(jobId);
-      this.connect().catch(console.error);
-    }
-
-    // Return unsubscribe function
-    return () => {
-      this.subscriptions.get(jobId)?.delete(callback);
-      if (this.subscriptions.get(jobId)?.size === 0) {
-        this.subscriptions.delete(jobId);
-        this.sendUnsubscribe(jobId);
-      }
-    };
-  }
-
-  /**
-   * Register callback for connection status changes
-   */
-  onConnectionChange(callback: ConnectionCallback): () => void {
-    this.connectionCallbacks.add(callback);
-    return () => {
-      this.connectionCallbacks.delete(callback);
-    };
-  }
-
-  /**
-   * Check if WebSocket is connected
-   */
-  isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-
-  private sendSubscribe(jobId: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ action: 'subscribe', jobId }));
-    }
-  }
-
-  private sendUnsubscribe(jobId: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ action: 'unsubscribe', jobId }));
-    }
-  }
-
-  private handleMessage(data: ImportProgressEvent): void {
-    if (data.type === 'connected') {
-      console.log('📡 WebSocket connection confirmed');
-      return;
-    }
-
-    if (data.type === 'subscribed') {
-      console.log(`📡 Subscribed to job ${data.jobId}`);
-      return;
-    }
-
-    if (data.type === 'import-progress' && data.jobId) {
-      const callbacks = this.subscriptions.get(data.jobId);
-      if (callbacks) {
-        callbacks.forEach(callback => callback(data));
+  private resubscribeAll(): void {
+    const jobIds = Array.from(this.activeCallbacks.keys());
+    for (let i = 0; i < jobIds.length; i++) {
+      const jobId = jobIds[i];
+      if (!this.subscribedJobs.has(jobId)) {
+        this.sendSubscribe(jobId);
       }
     }
   }
 
-  private notifyConnectionStatus(connected: boolean): void {
-    this.connectionCallbacks.forEach(callback => callback(connected));
+  private startPingInterval(): void {
+    this.stopPingInterval();
+    this.pingIntervalId = window.setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ action: 'ping' }));
+        } catch (e) {
+          console.warn('Ping failed');
+        }
+      }
+    }, 30000);
   }
 
-  private attemptReconnect(): void {
+  private stopPingInterval(): void {
+    if (this.pingIntervalId) {
+      clearInterval(this.pingIntervalId);
+      this.pingIntervalId = null;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.log('📡 Max reconnect attempts reached');
       return;
     }
 
+    if (this.activeCallbacks.size === 0) {
+      return;
+    }
+
     this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const delay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1);
     
-    console.log(`📡 Attempting reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    console.log(`📡 Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
     
-    setTimeout(() => {
-      if (!this.isIntentionallyClosed) {
+    this.reconnectTimeoutId = window.setTimeout(() => {
+      this.reconnectTimeoutId = null;
+      if (!this.isIntentionallyClosed && this.activeCallbacks.size > 0) {
         this.connect().catch(console.error);
       }
     }, delay);
   }
+
+  disconnect(): void {
+    this.isIntentionallyClosed = true;
+    this.stopPingInterval();
+    
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    
+    if (this.ws) {
+      try {
+        this.ws.close(1000, 'Intentional disconnect');
+      } catch (e) {}
+      this.ws = null;
+    }
+    
+    this.subscribedJobs.clear();
+    this.connectionPromise = null;
+    this.isConnecting = false;
+  }
+
+  subscribe(jobId: string, callback: ProgressCallback): () => void {
+    if (!this.activeCallbacks.has(jobId)) {
+      this.activeCallbacks.set(jobId, new Set());
+    }
+    
+    const callbacks = this.activeCallbacks.get(jobId)!;
+    if (callbacks.has(callback)) {
+      return () => this.unsubscribe(jobId, callback);
+    }
+    
+    callbacks.add(callback);
+
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      if (!this.subscribedJobs.has(jobId)) {
+        this.sendSubscribe(jobId);
+      }
+    } else {
+      this.isIntentionallyClosed = false;
+      this.connect().catch(console.error);
+    }
+
+    return () => this.unsubscribe(jobId, callback);
+  }
+
+  private unsubscribe(jobId: string, callback: ProgressCallback): void {
+    const callbacks = this.activeCallbacks.get(jobId);
+    if (!callbacks) return;
+    
+    callbacks.delete(callback);
+    
+    if (callbacks.size === 0) {
+      this.activeCallbacks.delete(jobId);
+      this.sendUnsubscribe(jobId);
+      this.subscribedJobs.delete(jobId);
+      
+      if (this.activeCallbacks.size === 0) {
+        this.disconnect();
+      }
+    }
+  }
+
+  onConnectionChange(callback: ConnectionCallback): () => void {
+    this.connectionCallbacks.add(callback);
+    callback(this.ws?.readyState === WebSocket.OPEN);
+    return () => {
+      this.connectionCallbacks.delete(callback);
+    };
+  }
+
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  private sendSubscribe(jobId: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN && !this.subscribedJobs.has(jobId)) {
+      console.log('📡 Subscribing to job:', jobId);
+      this.ws.send(JSON.stringify({ action: 'subscribe', jobId }));
+      this.subscribedJobs.add(jobId);
+    }
+  }
+
+  private sendUnsubscribe(jobId: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN && this.subscribedJobs.has(jobId)) {
+      this.ws.send(JSON.stringify({ action: 'unsubscribe', jobId }));
+      this.subscribedJobs.delete(jobId);
+    }
+  }
+
+  private handleMessage(data: ImportProgressEvent): void {
+    if (data.type === 'connected' || data.type === 'pong') {
+      return;
+    }
+
+    if (data.type === 'subscribed' && data.jobId) {
+      console.log(`📡 Confirmed subscription to job ${data.jobId}`);
+      return;
+    }
+
+    if (data.type === 'import-progress' && data.jobId) {
+      const callbacks = this.activeCallbacks.get(data.jobId);
+      if (callbacks) {
+        callbacks.forEach(callback => {
+          try {
+            callback(data);
+          } catch (e) {
+            console.error('Callback error:', e);
+          }
+        });
+      }
+    }
+  }
+
+  private notifyConnectionStatus(connected: boolean): void {
+    this.connectionCallbacks.forEach(callback => {
+      try {
+        callback(connected);
+      } catch (e) {}
+    });
+  }
 }
 
-// Export singleton instance
 export const importProgressWS = new ImportProgressWebSocket();
-
-/**
- * React hook for import progress WebSocket updates with robust fallback
- */
-import { useEffect, useState, useCallback, useRef } from 'react';
 
 export interface UseImportProgressOptions {
   jobId: string | null;
@@ -250,7 +355,7 @@ export interface ImportProgressState {
 }
 
 export function useImportProgress(options: UseImportProgressOptions): ImportProgressState {
-  const { jobId, onProgress, onComplete, onError, fallbackPollingInterval = 1500, startPollingImmediately = false } = options;
+  const { jobId, onProgress, onComplete, onError, fallbackPollingInterval = 2000, startPollingImmediately = false } = options;
   
   const [state, setState] = useState<ImportProgressState>({
     isConnected: false,
@@ -267,77 +372,13 @@ export function useImportProgress(options: UseImportProgressOptions): ImportProg
   });
 
   const pollingRef = useRef<number | null>(null);
-  const wsActiveRef = useRef(false);
-  const lastWsUpdateRef = useRef<number>(0);
-  const completionTimeoutRef = useRef<number | null>(null);
+  const isCompleteRef = useRef(false);
+  const callbacksRef = useRef({ onComplete, onError, onProgress });
 
-  // Start polling function
-  const startPolling = useCallback((jobId: string) => {
-    if (pollingRef.current) return;
+  useEffect(() => {
+    callbacksRef.current = { onComplete, onError, onProgress };
+  }, [onComplete, onError, onProgress]);
 
-    pollingRef.current = window.setInterval(async () => {
-      try {
-        const token = localStorage.getItem('authToken');
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        const response = await fetch(`/api/import/${jobId}`, {
-          credentials: 'include',
-          headers,
-        });
-        if (response.ok) {
-          const job = await response.json();
-          
-          setState(prev => ({
-            ...prev,
-            status: job.status,
-            totalRows: job.totalRows ?? prev.totalRows,
-            processedRows: job.processedRows ?? prev.processedRows,
-            successfulRows: job.successfulRows ?? prev.successfulRows,
-            errorRows: job.errorRows ?? prev.errorRows,
-            duplicateRows: job.duplicateRows ?? prev.duplicateRows,
-            message: `Processing... ${job.processedRows}/${job.totalRows}`,
-            isComplete: job.status === 'completed' || job.status === 'failed',
-            error: job.status === 'failed' ? 'Import failed' : null
-          }));
-
-          // Handle completion via polling
-          if (job.status === 'completed') {
-            onComplete?.({
-              type: 'import-progress',
-              jobId,
-              status: job.status,
-              totalRows: job.totalRows,
-              processedRows: job.processedRows,
-              successfulRows: job.successfulRows,
-              errorRows: job.errorRows,
-              duplicateRows: job.duplicateRows
-            });
-          } else if (job.status === 'failed') {
-            onError?.({
-              type: 'import-progress',
-              jobId,
-              status: job.status,
-              message: 'Import failed'
-            });
-          }
-
-          // Stop polling if complete
-          if (job.status === 'completed' || job.status === 'failed') {
-            if (pollingRef.current) {
-              window.clearInterval(pollingRef.current);
-              pollingRef.current = null;
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-      }
-    }, fallbackPollingInterval);
-  }, [fallbackPollingInterval, onComplete, onError]);
-
-  // Stop polling function
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       window.clearInterval(pollingRef.current);
@@ -345,99 +386,163 @@ export function useImportProgress(options: UseImportProgressOptions): ImportProg
     }
   }, []);
 
-  // Handle progress events from WebSocket
+  const pollForProgress = useCallback(async (jobId: string) => {
+    if (isCompleteRef.current) return;
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`/api/import/${jobId}`, {
+        credentials: 'include',
+        headers,
+      });
+      
+      if (response.ok) {
+        const job = await response.json();
+        const isComplete = job.status === 'completed' || job.status === 'failed';
+        
+        setState(prev => {
+          if (isCompleteRef.current) return prev;
+          return {
+            ...prev,
+            status: job.status || prev.status,
+            totalRows: job.totalRows ?? prev.totalRows,
+            processedRows: job.processedRows ?? prev.processedRows,
+            successfulRows: job.successfulRows ?? prev.successfulRows,
+            errorRows: job.errorRows ?? prev.errorRows,
+            duplicateRows: job.duplicateRows ?? prev.duplicateRows,
+            message: job.message || `Processing ${job.processedRows || 0} of ${job.totalRows || 0}...`,
+            isComplete,
+            error: job.status === 'failed' ? (job.message || 'Import failed') : null
+          };
+        });
+
+        if (isComplete && !isCompleteRef.current) {
+          isCompleteRef.current = true;
+          stopPolling();
+          
+          const event: ImportProgressEvent = {
+            type: 'import-progress',
+            jobId,
+            status: job.status,
+            totalRows: job.totalRows,
+            processedRows: job.processedRows,
+            successfulRows: job.successfulRows,
+            errorRows: job.errorRows,
+            duplicateRows: job.duplicateRows
+          };
+          
+          if (job.status === 'completed') {
+            callbacksRef.current.onComplete?.(event);
+          } else if (job.status === 'failed') {
+            callbacksRef.current.onError?.(event);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+  }, [stopPolling]);
+
+  const startPolling = useCallback((jobId: string) => {
+    if (pollingRef.current || isCompleteRef.current) return;
+
+    console.log('📡 Starting polling for job:', jobId);
+    pollForProgress(jobId);
+    
+    pollingRef.current = window.setInterval(() => {
+      pollForProgress(jobId);
+    }, fallbackPollingInterval);
+  }, [fallbackPollingInterval, pollForProgress]);
+
   const handleProgress = useCallback((event: ImportProgressEvent) => {
-    wsActiveRef.current = true;
-    lastWsUpdateRef.current = Date.now();
+    if (isCompleteRef.current) return;
+    
+    const isComplete = event.status === 'completed' || event.status === 'failed';
+    
+    setState(prev => {
+      if (isCompleteRef.current) return prev;
+      return {
+        ...prev,
+        isConnected: true,
+        status: event.status || prev.status,
+        totalRows: event.totalRows ?? prev.totalRows,
+        processedRows: event.processedRows ?? prev.processedRows,
+        successfulRows: event.successfulRows ?? prev.successfulRows,
+        errorRows: event.errorRows ?? prev.errorRows,
+        duplicateRows: event.duplicateRows ?? prev.duplicateRows,
+        updatedRows: event.updatedRows ?? prev.updatedRows,
+        message: event.message || prev.message,
+        isComplete,
+        error: event.status === 'failed' ? (event.message || 'Import failed') : null
+      };
+    });
 
-    setState(prev => ({
-      ...prev,
-      isConnected: true,
-      status: event.status || prev.status,
-      totalRows: event.totalRows ?? prev.totalRows,
-      processedRows: event.processedRows ?? prev.processedRows,
-      successfulRows: event.successfulRows ?? prev.successfulRows,
-      errorRows: event.errorRows ?? prev.errorRows,
-      duplicateRows: event.duplicateRows ?? prev.duplicateRows,
-      updatedRows: event.updatedRows ?? prev.updatedRows,
-      message: event.message || prev.message,
-      isComplete: event.status === 'completed' || event.status === 'failed',
-      error: event.status === 'failed' ? (event.message || 'Import failed') : null
-    }));
-
-    // Only stop polling if job is complete - otherwise keep both WS and polling active
-    // This ensures we always have a fallback if WS stalls
-    if (event.status === 'completed' || event.status === 'failed') {
+    if (isComplete && !isCompleteRef.current) {
+      isCompleteRef.current = true;
       stopPolling();
+      
+      if (event.status === 'completed') {
+        callbacksRef.current.onComplete?.(event);
+      } else if (event.status === 'failed') {
+        callbacksRef.current.onError?.(event);
+      }
+    } else if (!isComplete) {
+      callbacksRef.current.onProgress?.(event);
     }
+  }, [stopPolling]);
 
-    if (event.status === 'completed') {
-      onComplete?.(event);
-    } else if (event.status === 'failed') {
-      onError?.(event);
-    } else {
-      onProgress?.(event);
-    }
-  }, [onProgress, onComplete, onError, stopPolling]);
-
-  // Subscribe to WebSocket updates and manage fallback polling
   useEffect(() => {
     if (!jobId) return;
 
-    wsActiveRef.current = false;
-    lastWsUpdateRef.current = 0;
+    isCompleteRef.current = false;
+    setState({
+      isConnected: false,
+      status: 'pending',
+      totalRows: 0,
+      processedRows: 0,
+      successfulRows: 0,
+      errorRows: 0,
+      duplicateRows: 0,
+      updatedRows: 0,
+      message: 'Starting import...',
+      isComplete: false,
+      error: null
+    });
 
-    // Subscribe to WebSocket
     const unsubscribe = importProgressWS.subscribe(jobId, handleProgress);
 
-    // Track connection status and resume polling on disconnect
     const unsubscribeConnection = importProgressWS.onConnectionChange((connected) => {
       setState(prev => ({ ...prev, isConnected: connected }));
       
-      if (!connected && !state.isComplete) {
-        // Resume polling when WebSocket disconnects
-        console.log('📡 WebSocket disconnected, resuming polling');
+      if (!connected && !isCompleteRef.current && !pollingRef.current) {
+        console.log('📡 WebSocket disconnected, starting polling fallback');
         startPolling(jobId);
       }
     });
 
-    // Start polling immediately if requested, or after a delay as fallback
     if (startPollingImmediately) {
-      // Start polling right away - don't wait for WebSocket
-      console.log('📡 Starting polling immediately (parallel with WebSocket)');
       startPolling(jobId);
     }
 
-    // Start polling as fallback after initial delay if no WS updates received
-    const pollingTimeout = setTimeout(() => {
-      if (!wsActiveRef.current && !state.isComplete && !pollingRef.current) {
-        console.log('📡 No WebSocket updates, starting polling fallback');
+    const fallbackTimeout = window.setTimeout(() => {
+      if (!importProgressWS.isConnected() && !isCompleteRef.current && !pollingRef.current) {
+        console.log('📡 No WebSocket connection after timeout, starting polling');
         startPolling(jobId);
       }
-    }, startPollingImmediately ? 500 : 1500); // Shorter timeout if already polling
-
-    // Safety timeout: if no WS updates for 3 seconds during processing, start polling
-    const safetyInterval = window.setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastWsUpdateRef.current;
-      
-      if (timeSinceLastUpdate > 3000 && !state.isComplete && !pollingRef.current) {
-        console.log('📡 No WS updates for 3s, starting safety polling');
-        startPolling(jobId);
-      }
-    }, 1500);
+    }, 3000);
 
     return () => {
+      clearTimeout(fallbackTimeout);
       unsubscribe();
       unsubscribeConnection();
-      clearTimeout(pollingTimeout);
-      window.clearInterval(safetyInterval);
       stopPolling();
-      if (completionTimeoutRef.current) {
-        window.clearTimeout(completionTimeoutRef.current);
-      }
     };
-  }, [jobId, handleProgress, startPolling, stopPolling, state.isComplete, startPollingImmediately]);
+  }, [jobId, handleProgress, startPolling, stopPolling, startPollingImmediately]);
 
   return state;
 }

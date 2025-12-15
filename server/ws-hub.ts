@@ -27,9 +27,9 @@ interface BulkOperationProgressEvent extends BulkProgressEvent {
 }
 
 interface WSMessage {
-  action: 'subscribe' | 'unsubscribe';
-  jobId: string;
-  channel?: 'import' | 'bulk'; // Default to 'import' for backwards compatibility
+  action: 'subscribe' | 'unsubscribe' | 'ping';
+  jobId?: string;
+  channel?: 'import' | 'bulk';
 }
 
 type ProgressEvent = ImportProgressEvent | BulkOperationProgressEvent;
@@ -62,7 +62,6 @@ class WebSocketHub {
     });
 
     this.importWss.on('connection', (ws: WebSocket) => {
-      console.log('📡 Import WebSocket client connected');
       this.importClientJobs.set(ws, new Set());
       this.setupClientHandlers(ws, 'import');
       ws.send(JSON.stringify({ type: 'connected', channel: 'import', message: 'WebSocket connection established' }));
@@ -75,7 +74,6 @@ class WebSocketHub {
     });
 
     this.bulkWss.on('connection', (ws: WebSocket) => {
-      console.log('📡 Bulk Operations WebSocket client connected');
       this.bulkClientJobs.set(ws, new Set());
       this.setupClientHandlers(ws, 'bulk');
       ws.send(JSON.stringify({ type: 'connected', channel: 'bulk', message: 'WebSocket connection established' }));
@@ -98,7 +96,6 @@ class WebSocketHub {
     });
 
     ws.on('close', () => {
-      console.log(`📡 ${channel === 'import' ? 'Import' : 'Bulk Operations'} WebSocket client disconnected`);
       this.cleanupClient(ws, channel);
     });
 
@@ -113,6 +110,11 @@ class WebSocketHub {
    */
   private handleMessage(ws: WebSocket, message: WSMessage, channel: 'import' | 'bulk'): void {
     const { action, jobId } = message;
+
+    if (action === 'ping') {
+      ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      return;
+    }
 
     if (!jobId) {
       ws.send(JSON.stringify({ type: 'error', message: 'jobId is required' }));
@@ -131,7 +133,6 @@ class WebSocketHub {
         clientJobs.get(ws)?.add(jobId);
         ws.send(JSON.stringify({ type: 'subscribed', jobId, channel }));
         
-        // Send cached progress immediately to late-joining subscribers (import channel only)
         if (channel === 'import') {
           const cachedProgress = this.importProgressCache.get(jobId);
           if (cachedProgress) {
