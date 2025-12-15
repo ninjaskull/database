@@ -464,7 +464,6 @@ export class DatabaseStorage implements IStorage {
         AND LENGTH(cd.domain) > 3
         AND cd.domain ~ '^[a-z0-9][a-z0-9.-]+[a-z0-9]\\.[a-z]{2,}$'
       ORDER BY cd.contact_count DESC
-      LIMIT 1000
     `);
 
     return result.rows.map((row: any) => ({
