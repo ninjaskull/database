@@ -14,10 +14,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useBulkOperationProgress } from "@/lib/ws-bulk-operations";
+import { useProspectMatchPreview } from "@/lib/use-prospect-match-preview";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, CheckCircle2, XCircle, Building2, User, ArrowRight, Activity } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Building2, User, ArrowRight, Activity, Globe, Users, MapPin, Briefcase, Search, Zap } from "lucide-react";
 import { format } from "date-fns";
 import type { Contact, Company } from "@shared/schema";
 
@@ -39,6 +40,47 @@ export default function Prospects() {
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  
+  const matchPreview = useProspectMatchPreview();
+  
+  const debounceRef = { current: null as NodeJS.Timeout | null };
+  
+  const triggerMatchPreview = useCallback((email: string, company: string) => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    
+    if (!email && !company) {
+      matchPreview.reset();
+      return;
+    }
+    
+    const emailValid = email.includes('@') && email.split('@')[1]?.includes('.');
+    
+    if (emailValid || company.length >= 2) {
+      debounceRef.current = setTimeout(() => {
+        matchPreview.startPreview(email, company);
+      }, 500);
+    }
+  }, [matchPreview]);
+  
+  useEffect(() => {
+    if (showAddDialog && (newProspect.email || newProspect.company)) {
+      triggerMatchPreview(newProspect.email, newProspect.company);
+    } else if (!showAddDialog) {
+      matchPreview.reset();
+    }
+  }, [showAddDialog]);
+  
+  const handleEmailChange = (value: string) => {
+    setNewProspect(prev => ({ ...prev, email: value }));
+    triggerMatchPreview(value, newProspect.company);
+  };
+  
+  const handleCompanyChange = (value: string) => {
+    setNewProspect(prev => ({ ...prev, company: value }));
+    triggerMatchPreview(newProspect.email, value);
+  };
 
   const matchProgress = useBulkOperationProgress({
     jobId: activeMatchJobId,
@@ -287,7 +329,7 @@ export default function Prospects() {
                         <Input
                           type="email"
                           value={newProspect.email}
-                          onChange={(e) => setNewProspect({ ...newProspect, email: e.target.value })}
+                          onChange={(e) => handleEmailChange(e.target.value)}
                           placeholder="john@acme.com"
                           data-testid="input-prospect-email"
                         />
@@ -317,11 +359,131 @@ export default function Prospects() {
                         <Label>Company Name</Label>
                         <Input
                           value={newProspect.company}
-                          onChange={(e) => setNewProspect({ ...newProspect, company: e.target.value })}
+                          onChange={(e) => handleCompanyChange(e.target.value)}
                           placeholder="Acme Inc."
                           data-testid="input-prospect-company"
                         />
                       </div>
+                      
+                      {(matchPreview.isLoading || matchPreview.matched || matchPreview.steps.length > 0) && (
+                        <div className="mt-4 p-4 bg-muted/50 rounded-lg border" data-testid="match-preview-panel">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Search className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">Real-time Company Matching</span>
+                            {matchPreview.isLoading && (
+                              <Loader2 className="h-4 w-4 animate-spin ml-auto text-blue-500" />
+                            )}
+                            {matchPreview.matched && !matchPreview.isLoading && (
+                              <CheckCircle2 className="h-4 w-4 ml-auto text-green-500" />
+                            )}
+                            {!matchPreview.matched && !matchPreview.isLoading && matchPreview.progress === 100 && (
+                              <XCircle className="h-4 w-4 ml-auto text-yellow-500" />
+                            )}
+                          </div>
+                          
+                          <div className="space-y-2 mb-3">
+                            <Progress value={matchPreview.progress} className="h-1.5" data-testid="match-preview-progress" />
+                            <p className="text-xs text-muted-foreground">{matchPreview.message}</p>
+                          </div>
+                          
+                          {matchPreview.steps.length > 0 && (
+                            <div className="space-y-1 text-xs mb-3">
+                              {matchPreview.steps.slice(-4).map((step, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                  {step.step === 'complete' ? (
+                                    step.matched ? (
+                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                    ) : (
+                                      <XCircle className="h-3 w-3 text-yellow-500" />
+                                    )
+                                  ) : step.step.includes('match_found') ? (
+                                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                  ) : step.step.includes('no_match') || step.step.includes('invalid') ? (
+                                    <XCircle className="h-3 w-3 text-yellow-500" />
+                                  ) : (
+                                    <Zap className="h-3 w-3 text-blue-500" />
+                                  )}
+                                  <span className={
+                                    step.step.includes('match_found') ? 'text-green-600' :
+                                    step.step.includes('no_match') ? 'text-yellow-600' :
+                                    'text-muted-foreground'
+                                  }>
+                                    {step.message}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {matchPreview.matched && matchPreview.company && (
+                            <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3 mt-3" data-testid="matched-company-card">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Building2 className="h-4 w-4 text-green-600" />
+                                <span className="font-medium text-green-700 dark:text-green-400">Company Match Found!</span>
+                                <Badge className="ml-auto bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+                                  {matchPreview.confidence}% confidence
+                                </Badge>
+                              </div>
+                              <div className="space-y-2">
+                                <p className="font-semibold text-lg">{matchPreview.company.name}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  Matched via {matchPreview.matchType === 'domain' ? 'email domain' : 'company name'}
+                                </p>
+                                <Separator className="my-2" />
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  The following details will be auto-filled:
+                                </p>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  {matchPreview.company.industry && (
+                                    <div className="flex items-center gap-1.5">
+                                      <Briefcase className="h-3 w-3 text-muted-foreground" />
+                                      <span>{matchPreview.company.industry}</span>
+                                    </div>
+                                  )}
+                                  {matchPreview.company.employeeSizeBracket && (
+                                    <div className="flex items-center gap-1.5">
+                                      <Users className="h-3 w-3 text-muted-foreground" />
+                                      <span>{matchPreview.company.employeeSizeBracket}</span>
+                                    </div>
+                                  )}
+                                  {matchPreview.company.website && (
+                                    <div className="flex items-center gap-1.5">
+                                      <Globe className="h-3 w-3 text-muted-foreground" />
+                                      <span className="truncate">{matchPreview.company.website}</span>
+                                    </div>
+                                  )}
+                                  {(matchPreview.company.city || matchPreview.company.country) && (
+                                    <div className="flex items-center gap-1.5">
+                                      <MapPin className="h-3 w-3 text-muted-foreground" />
+                                      <span>
+                                        {[matchPreview.company.city, matchPreview.company.state, matchPreview.company.country]
+                                          .filter(Boolean).join(', ')}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                {matchPreview.company.technologies && (
+                                  <div className="mt-2">
+                                    <span className="text-xs text-muted-foreground">Technologies: </span>
+                                    <span className="text-xs">{matchPreview.company.technologies}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {!matchPreview.matched && !matchPreview.isLoading && matchPreview.progress === 100 && (
+                            <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mt-3" data-testid="no-match-notice">
+                              <div className="flex items-center gap-2">
+                                <XCircle className="h-4 w-4 text-yellow-600" />
+                                <span className="text-sm text-yellow-700 dark:text-yellow-400">
+                                  No matching company found. Prospect will be added to review queue.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div>
                         <Label>Job Title</Label>
                         <Input

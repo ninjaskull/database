@@ -448,6 +448,223 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============ PROSPECT ROUTES ============
 
+  // Real-time prospect matching preview (SSE endpoint)
+  app.get("/api/prospects/match-preview", requireAuth, async (req, res) => {
+    const email = req.query.email as string;
+    const companyName = req.query.company as string;
+    
+    if (!email && !companyName) {
+      return res.status(400).json({ message: "Email or company name required" });
+    }
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    let isConnectionClosed = false;
+    
+    req.on('close', () => {
+      isConnectionClosed = true;
+    });
+
+    const sendEvent = (data: any) => {
+      if (isConnectionClosed) return;
+      try {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (e) {
+        isConnectionClosed = true;
+      }
+    };
+
+    try {
+      // Step 1: Extract domain from email
+      if (email) {
+        sendEvent({ 
+          step: 'extracting_domain', 
+          message: 'Extracting email domain...', 
+          progress: 10 
+        });
+        await new Promise(r => setTimeout(r, 150));
+
+        const emailDomain = email.includes('@') ? email.split('@')[1]?.toLowerCase() : null;
+        
+        if (emailDomain) {
+          sendEvent({ 
+            step: 'domain_extracted', 
+            message: `Domain extracted: ${emailDomain}`, 
+            domain: emailDomain,
+            progress: 20 
+          });
+          await new Promise(r => setTimeout(r, 100));
+
+          // Step 2: Search for company by domain
+          sendEvent({ 
+            step: 'searching_domain', 
+            message: `Searching company database for domain: ${emailDomain}...`, 
+            progress: 30 
+          });
+          
+          const matchedByDomain = await storage.getCompanyByDomain(emailDomain);
+          
+          if (matchedByDomain) {
+            sendEvent({ 
+              step: 'domain_match_found', 
+              message: `Found company match by domain!`, 
+              matchType: 'domain',
+              confidence: 95,
+              progress: 90,
+              company: {
+                id: matchedByDomain.id,
+                name: matchedByDomain.name,
+                industry: matchedByDomain.industry,
+                employees: matchedByDomain.employees,
+                employeeSizeBracket: matchedByDomain.employeeSizeBracket,
+                website: matchedByDomain.website,
+                linkedinUrl: matchedByDomain.linkedinUrl,
+                city: matchedByDomain.city,
+                state: matchedByDomain.state,
+                country: matchedByDomain.country,
+                technologies: matchedByDomain.technologies,
+                annualRevenue: matchedByDomain.annualRevenue,
+              }
+            });
+            await new Promise(r => setTimeout(r, 100));
+
+            sendEvent({ 
+              step: 'complete', 
+              message: 'Matching complete - company found!', 
+              progress: 100,
+              matched: true,
+              matchType: 'domain',
+              confidence: 95,
+              company: {
+                id: matchedByDomain.id,
+                name: matchedByDomain.name,
+                industry: matchedByDomain.industry,
+                employees: matchedByDomain.employees,
+                employeeSizeBracket: matchedByDomain.employeeSizeBracket,
+                website: matchedByDomain.website,
+                linkedinUrl: matchedByDomain.linkedinUrl,
+                city: matchedByDomain.city,
+                state: matchedByDomain.state,
+                country: matchedByDomain.country,
+                technologies: matchedByDomain.technologies,
+                annualRevenue: matchedByDomain.annualRevenue,
+              }
+            });
+            res.end();
+            return;
+          } else {
+            sendEvent({ 
+              step: 'domain_no_match', 
+              message: `No company found for domain: ${emailDomain}`, 
+              progress: 50 
+            });
+          }
+        } else {
+          sendEvent({ 
+            step: 'domain_invalid', 
+            message: 'Could not extract valid domain from email', 
+            progress: 20 
+          });
+        }
+      }
+
+      // Step 3: Try company name matching
+      if (companyName) {
+        sendEvent({ 
+          step: 'searching_name', 
+          message: `Searching for company: "${companyName}"...`, 
+          progress: 60 
+        });
+        await new Promise(r => setTimeout(r, 150));
+
+        const matchedByName = await storage.getCompanyByName(companyName);
+        
+        if (matchedByName) {
+          sendEvent({ 
+            step: 'name_match_found', 
+            message: `Found company match by name!`, 
+            matchType: 'name',
+            confidence: 85,
+            progress: 90,
+            company: {
+              id: matchedByName.id,
+              name: matchedByName.name,
+              industry: matchedByName.industry,
+              employees: matchedByName.employees,
+              employeeSizeBracket: matchedByName.employeeSizeBracket,
+              website: matchedByName.website,
+              linkedinUrl: matchedByName.linkedinUrl,
+              city: matchedByName.city,
+              state: matchedByName.state,
+              country: matchedByName.country,
+              technologies: matchedByName.technologies,
+              annualRevenue: matchedByName.annualRevenue,
+            }
+          });
+          await new Promise(r => setTimeout(r, 100));
+
+          sendEvent({ 
+            step: 'complete', 
+            message: 'Matching complete - company found!', 
+            progress: 100,
+            matched: true,
+            matchType: 'name',
+            confidence: 85,
+            company: {
+              id: matchedByName.id,
+              name: matchedByName.name,
+              industry: matchedByName.industry,
+              employees: matchedByName.employees,
+              employeeSizeBracket: matchedByName.employeeSizeBracket,
+              website: matchedByName.website,
+              linkedinUrl: matchedByName.linkedinUrl,
+              city: matchedByName.city,
+              state: matchedByName.state,
+              country: matchedByName.country,
+              technologies: matchedByName.technologies,
+              annualRevenue: matchedByName.annualRevenue,
+            }
+          });
+          res.end();
+          return;
+        } else {
+          sendEvent({ 
+            step: 'name_no_match', 
+            message: `No exact match found for: "${companyName}"`, 
+            progress: 80 
+          });
+        }
+      }
+
+      // No match found
+      sendEvent({ 
+        step: 'complete', 
+        message: 'No matching company found in database', 
+        progress: 100,
+        matched: false,
+        matchType: null,
+        confidence: 0,
+        company: null
+      });
+      res.end();
+      
+    } catch (error) {
+      console.error('Match preview error:', error);
+      sendEvent({ 
+        step: 'error', 
+        message: 'Matching failed', 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        progress: 100 
+      });
+      res.end();
+    }
+  });
+
   // Create prospect (simplified form with auto company matching)
   app.post("/api/prospects", requireAuth, async (req, res) => {
     try {
