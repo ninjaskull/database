@@ -1250,7 +1250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Ultra-fast auto-map CSV headers using advanced streaming parser and NLP
-  app.post("/api/import/auto-map", upload.single('csv'), requireAuth, async (req, res) => {
+  app.post("/api/import/auto-map", requireAuth, upload.single('csv'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -1317,7 +1317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Ultra-fast CSV Import with advanced processing
-  app.post("/api/import", upload.single('csv'), requireAuth, async (req, res) => {
+  app.post("/api/import", requireAuth, upload.single('csv'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -1381,7 +1381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== COMPANY IMPORT ROUTES ====================
 
   // Auto-map company CSV headers using NLP
-  app.post("/api/companies/import/auto-map", upload.single('csv'), requireAuth, async (req, res) => {
+  app.post("/api/companies/import/auto-map", requireAuth, upload.single('csv'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
