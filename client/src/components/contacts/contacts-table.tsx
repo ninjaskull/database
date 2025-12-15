@@ -47,13 +47,21 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
     )
   );
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   // Update contact mutation
   const updateContactMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Contact> }) => {
       const response = await fetch(`/api/contacts/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
+        credentials: 'include',
       });
       if (!response.ok) throw new Error('Failed to update contact');
       return response.json();
@@ -87,7 +95,10 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
         ...cleanFilters
       });
       
-      const response = await fetch(`/api/contacts?${params}`);
+      const response = await fetch(`/api/contacts?${params}`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch contacts');
       }
@@ -523,7 +534,11 @@ export function ContactsTable({ filters, selectedContactIds, onSelectionChange }
                               size="sm"
                               onClick={async () => {
                                 if (confirm(`Delete ${contact.fullName}?`)) {
-                                  await fetch(`/api/contacts/${contact.id}`, { method: 'DELETE' });
+                                  await fetch(`/api/contacts/${contact.id}`, { 
+                                    method: 'DELETE',
+                                    credentials: 'include',
+                                    headers: getAuthHeaders(),
+                                  });
                                   queryClient.invalidateQueries({ queryKey: ['contacts'] });
                                 }
                               }}

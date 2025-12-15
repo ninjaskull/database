@@ -35,6 +35,13 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   const handleExportContacts = () => {
     // Trigger download of the CSV export
     const link = document.createElement('a');
@@ -78,7 +85,8 @@ export default function Dashboard() {
 
       const response = await fetch('/api/contacts/bulk-update', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           contactIds: selectedContactIds,
           updates: updateData
@@ -163,7 +171,8 @@ export default function Dashboard() {
                     try {
                       const response = await fetch('/api/contacts', {
                         method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
+                        credentials: 'include',
                         body: JSON.stringify({ ids: selectedContactIds })
                       });
                       if (response.ok) {

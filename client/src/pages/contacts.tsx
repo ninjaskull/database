@@ -13,6 +13,13 @@ export default function Contacts() {
     country: '',
   });
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
@@ -40,7 +47,8 @@ export default function Contacts() {
                     try {
                       const response = await fetch('/api/contacts', {
                         method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
+                        credentials: 'include',
                         body: JSON.stringify({ ids: selectedContactIds })
                       });
                       if (response.ok) {
