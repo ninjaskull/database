@@ -9,27 +9,27 @@ import { Zap, Clock, Database, Users, TrendingUp, CheckCircle } from "lucide-rea
 
 interface PerformanceMetricsProps {
   importJob?: {
-    totalRows: number;
-    processedRows: number;
-    successfulRows: number;
-    errorRows: number;
-    duplicateRows: number;
+    totalRows: number | null;
+    processedRows: number | null;
+    successfulRows: number | null;
+    errorRows: number | null;
+    duplicateRows: number | null;
     status: string;
-    createdAt?: Date;
-    completedAt?: Date;
+    createdAt?: Date | null;
+    completedAt?: Date | null;
   };
   estimatedTime?: number;
   actualTime?: number;
 }
 
 export function PerformanceMetrics({ importJob, estimatedTime, actualTime }: PerformanceMetricsProps) {
-  const progressPercentage = importJob?.totalRows ? 
+  const progressPercentage = importJob?.totalRows && importJob?.processedRows !== null ? 
     Math.round((importJob.processedRows / importJob.totalRows) * 100) : 0;
 
-  const processingSpeed = importJob && actualTime ? 
+  const processingSpeed = importJob && actualTime && importJob.processedRows !== null ? 
     Math.round(importJob.processedRows / actualTime) : 0;
 
-  const successRate = importJob?.processedRows ? 
+  const successRate = importJob?.processedRows && importJob?.successfulRows !== null ? 
     Math.round((importJob.successfulRows / importJob.processedRows) * 100) : 0;
 
   const isComplete = importJob?.status === 'completed';
@@ -69,7 +69,7 @@ export function PerformanceMetrics({ importJob, estimatedTime, actualTime }: Per
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  <span>Progress: {importJob.processedRows.toLocaleString()} / {importJob.totalRows.toLocaleString()}</span>
+                  <span>Progress: {(importJob.processedRows ?? 0).toLocaleString()} / {(importJob.totalRows ?? 0).toLocaleString()}</span>
                   <span>{progressPercentage}%</span>
                 </div>
                 <Progress value={progressPercentage} className="h-3" />
@@ -113,7 +113,7 @@ export function PerformanceMetrics({ importJob, estimatedTime, actualTime }: Per
                   {successRate}%
                 </p>
                 <p className="text-xs text-gray-500">
-                  {importJob?.successfulRows.toLocaleString() || 0} created
+                  {(importJob?.successfulRows ?? 0).toLocaleString()} created
                 </p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-500 opacity-60" />
@@ -128,7 +128,7 @@ export function PerformanceMetrics({ importJob, estimatedTime, actualTime }: Per
               <div>
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Duplicates</p>
                 <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                  {importJob?.duplicateRows.toLocaleString() || 0}
+                  {(importJob?.duplicateRows ?? 0).toLocaleString()}
                 </p>
                 <p className="text-xs text-gray-500">detected</p>
               </div>

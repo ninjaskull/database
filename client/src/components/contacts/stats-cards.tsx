@@ -2,8 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
+interface StatsData {
+  totalContacts: number;
+  totalCompanies: number;
+  validEmails: number;
+  averageLeadScore: number;
+}
+
 export function StatsCards() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading } = useQuery<StatsData>({
     queryKey: ['/api/stats'],
   });
 
@@ -41,7 +48,7 @@ export function StatsCards() {
       name: 'Valid Emails',
       value: stats?.validEmails?.toLocaleString() || '0',
       icon: 'fas fa-envelope',
-      change: `${Math.round((stats?.validEmails / stats?.totalContacts) * 100) || 0}%`,
+      change: `${stats?.validEmails && stats?.totalContacts ? Math.round((stats.validEmails / stats.totalContacts) * 100) : 0}%`,
       changeType: 'neutral' as const,
     },
     {
