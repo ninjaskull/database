@@ -284,7 +284,15 @@ export function useBulkOperationProgress(options: UseBulkOperationProgressOption
 
     pollingRef.current = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/bulk/jobs/${jobId}`);
+        const token = localStorage.getItem('authToken');
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const response = await fetch(`/api/bulk/jobs/${jobId}`, {
+          credentials: 'include',
+          headers,
+        });
         if (response.ok) {
           const data = await response.json();
           const job = data.job;
@@ -431,42 +439,30 @@ export function useBulkOperationProgress(options: UseBulkOperationProgressOption
     lastWsUpdateRef.current = 0;
     activityLogRef.current = [];
 
+    setState(prev => ({
+      ...prev,
+      status: 'running',
+      message: 'Starting operation...',
+    }));
+
+    startPolling(jobId);
+
     const unsubscribe = bulkOperationsWS.subscribe(jobId, handleProgress);
 
     const unsubscribeConnection = bulkOperationsWS.onConnectionChange((connected) => {
       setState(prev => ({ ...prev, isConnected: connected }));
       
-      if (!connected && !state.isComplete) {
-        console.log('📡 Bulk Operations WebSocket disconnected, resuming polling');
-        startPolling(jobId);
+      if (connected && wsActiveRef.current) {
+        stopPolling();
       }
     });
-
-    const pollingTimeout = setTimeout(() => {
-      if (!wsActiveRef.current && !state.isComplete) {
-        console.log('📡 No Bulk Operations WebSocket updates, starting polling fallback');
-        startPolling(jobId);
-      }
-    }, 2000);
-
-    const safetyInterval = window.setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastWsUpdateRef.current;
-      
-      if (wsActiveRef.current && timeSinceLastUpdate > 5000 && !state.isComplete && !pollingRef.current) {
-        console.log('📡 No Bulk WS updates for 5s, starting safety polling');
-        startPolling(jobId);
-      }
-    }, 2000);
 
     return () => {
       unsubscribe();
       unsubscribeConnection();
-      clearTimeout(pollingTimeout);
-      window.clearInterval(safetyInterval);
       stopPolling();
     };
-  }, [jobId, handleProgress, startPolling, stopPolling, state.isComplete]);
+  }, [jobId, handleProgress, startPolling, stopPolling]);
 
   return state;
 }

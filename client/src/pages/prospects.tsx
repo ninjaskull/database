@@ -105,7 +105,7 @@ export default function Prospects() {
     },
   });
 
-  const isMatchRunning = matchProgress.status === 'running' || matchProgress.status === 'queued';
+  const isMatchRunning = matchProgress.status === 'running' || matchProgress.status === 'queued' || (!!activeMatchJobId && matchProgress.status !== 'completed' && matchProgress.status !== 'failed' && matchProgress.status !== 'idle');
   const isMatchComplete = matchProgress.status === 'completed';
   const isMatchFailed = matchProgress.status === 'failed';
 
