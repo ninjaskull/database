@@ -2714,6 +2714,10 @@ export class DatabaseStorage implements IStorage {
 
     const errors: Array<{ itemId: string; itemName: string; error: string }> = [];
     const storageRef = this;
+    
+    // Throttled DB update tracking
+    let lastDbUpdate = Date.now();
+    let lastProcessedForDb = 0;
 
     const { results, stats } = await BatchProcessor.processInParallelBatches<Contact, { matched: boolean; companyName?: string }>(
       unmatchedContacts,
@@ -2780,7 +2784,7 @@ export class DatabaseStorage implements IStorage {
       {
         batchSize: BATCH_SIZE,
         concurrency: CONCURRENCY,
-        onProgress: (progressStats, currentItem) => {
+        onProgress: async (progressStats, currentItem) => {
           const message = formatProgressMessage(progressStats);
           const elapsedSeconds = (Date.now() - progressStats.startTime) / 1000;
           onProgress({
@@ -2802,6 +2806,23 @@ export class DatabaseStorage implements IStorage {
             current: currentItem,
             message: `${message} | Matched: ${progressStats.matched}`,
           });
+          
+          // Throttled DB updates (every 50 items or 3 seconds)
+          const shouldUpdateDb = 
+            progressStats.processed - lastProcessedForDb >= 50 || 
+            Date.now() - lastDbUpdate > 3000;
+          
+          if (shouldUpdateDb) {
+            await storageRef.updateBulkOperationJob(jobId, {
+              processedItems: progressStats.processed,
+              successCount: progressStats.success,
+              failedCount: progressStats.failed,
+              skippedCount: progressStats.skipped,
+              matchedCount: progressStats.matched,
+            });
+            lastDbUpdate = Date.now();
+            lastProcessedForDb = progressStats.processed;
+          }
         },
       }
     );
@@ -2855,6 +2876,10 @@ export class DatabaseStorage implements IStorage {
 
     const companyTemplateCache = new CompanyTemplateCache<Partial<Contact> | null>(2000);
     const companiesProcessedSet = new Set<string>();
+    
+    // Throttled DB update tracking
+    let lastDbUpdate = Date.now();
+    let lastProcessedForDb = 0;
 
     await this.updateBulkOperationJob(jobId, { 
       totalItems: total, 
@@ -2977,7 +3002,7 @@ export class DatabaseStorage implements IStorage {
       {
         batchSize: BATCH_SIZE,
         concurrency: CONCURRENCY,
-        onProgress: (progressStats, currentItem) => {
+        onProgress: async (progressStats, currentItem) => {
           const message = formatProgressMessage(progressStats);
           const elapsedSeconds = (Date.now() - progressStats.startTime) / 1000;
           onProgress({
@@ -2999,6 +3024,23 @@ export class DatabaseStorage implements IStorage {
             current: currentItem,
             message: `${message} | Updated: ${progressStats.success}`,
           });
+          
+          // Throttled DB updates (every 50 items or 3 seconds)
+          const shouldUpdateDb = 
+            progressStats.processed - lastProcessedForDb >= 50 || 
+            Date.now() - lastDbUpdate > 3000;
+          
+          if (shouldUpdateDb) {
+            await storageRef.updateBulkOperationJob(jobId, {
+              processedItems: progressStats.processed,
+              successCount: progressStats.success,
+              failedCount: progressStats.failed,
+              skippedCount: progressStats.skipped,
+              matchedCount: companiesProcessedSet.size,
+            });
+            lastDbUpdate = Date.now();
+            lastProcessedForDb = progressStats.processed;
+          }
         },
       }
     );

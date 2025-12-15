@@ -30,7 +30,7 @@ export interface BatchResult<T, R> {
   matched?: boolean;
 }
 
-export type ProgressCallback = (stats: BatchProgressStats, currentItem?: { id: string; name: string; step: string; details?: any }) => void;
+export type ProgressCallback = (stats: BatchProgressStats, currentItem?: { id: string; name: string; step: string; details?: any }) => void | Promise<void>;
 
 export class BatchProcessor {
   private static calculateETA(processed: number, total: number, elapsedMs: number): { itemsPerSecond: number; estimatedTimeRemaining: number } {
@@ -116,7 +116,7 @@ export class BatchProcessor {
             lastEstimatedTimeRemaining = estimatedTimeRemaining;
 
             if (onProgress) {
-              onProgress({
+              await onProgress({
                 total,
                 processed,
                 success,
@@ -142,7 +142,7 @@ export class BatchProcessor {
             lastEstimatedTimeRemaining = estimatedTimeRemaining;
 
             if (onProgress) {
-              onProgress({
+              await onProgress({
                 total,
                 processed,
                 success,
@@ -279,7 +279,7 @@ export class BatchProcessor {
         const { itemsPerSecond, estimatedTimeRemaining } = this.calculateETA(processed, total, elapsed);
 
         if (onProgress) {
-          onProgress({
+          await onProgress({
             total,
             processed,
             success,
