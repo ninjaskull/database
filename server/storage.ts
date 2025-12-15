@@ -55,7 +55,7 @@ import {
 } from "@shared/schema";
 import { BatchProcessor, CompanyTemplateCache, formatProgressMessage } from "./batch-processor";
 import { db } from "./db";
-import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne } from "drizzle-orm";
+import { eq, and, ilike, desc, asc, count, sql, or, isNull, isNotNull, ne, inArray } from "drizzle-orm";
 import { CompanyMatcher } from "./company-matcher";
 
 export interface IStorage {
