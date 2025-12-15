@@ -233,12 +233,24 @@ export function SmartImportWizard() {
       formData.append('fieldMapping', JSON.stringify(finalMapping));
       formData.append('options', JSON.stringify(importOptions));
       
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch('/api/import', {
         method: 'POST',
         body: formData,
+        credentials: 'include',
+        headers,
       });
       
-      if (!response.ok) throw new Error('Import failed');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Import failed:', response.status, errorText);
+        throw new Error(`Import failed: ${response.status}`);
+      }
       return response.json();
     },
     onSuccess: (data) => {

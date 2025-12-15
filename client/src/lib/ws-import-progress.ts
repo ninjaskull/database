@@ -277,7 +277,15 @@ export function useImportProgress(options: UseImportProgressOptions): ImportProg
 
     pollingRef.current = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/import/${jobId}`);
+        const token = localStorage.getItem('authToken');
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const response = await fetch(`/api/import/${jobId}`, {
+          credentials: 'include',
+          headers,
+        });
         if (response.ok) {
           const job = await response.json();
           
