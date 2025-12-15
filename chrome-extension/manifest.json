@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prospect Lookup",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Look up prospect details from LinkedIn profiles using your CRM database",
   "permissions": [
     "storage",
@@ -11,7 +11,9 @@
     "https://www.linkedin.com/*",
     "https://linkedin.com/*",
     "https://*.replit.app/*",
-    "https://*.replit.dev/*"
+    "https://*.replit.dev/*",
+    "https://crm.fallowl.com/*",
+    "https://*.fallowl.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -33,7 +35,7 @@
       "css": ["content-styles.css"]
     },
     {
-      "matches": ["https://*.replit.app/*", "https://*.replit.dev/*"],
+      "matches": ["https://*.replit.app/*", "https://*.replit.dev/*", "https://crm.fallowl.com/*", "https://*.fallowl.com/*"],
       "js": ["dashboard-content.js"],
       "run_at": "document_idle"
     }
@@ -42,6 +44,6 @@
     "service_worker": "background.js"
   },
   "externally_connectable": {
-    "matches": ["https://*.replit.app/*", "https://*.replit.dev/*"]
+    "matches": ["https://*.replit.app/*", "https://*.replit.dev/*", "https://crm.fallowl.com/*", "https://*.fallowl.com/*"]
   }
 }
