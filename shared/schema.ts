@@ -753,6 +753,11 @@ export interface BulkProgressEvent {
     fieldsFilled?: string[];
     step?: string;
   };
+  performance?: {
+    itemsPerSecond: number;
+    estimatedTimeRemaining: number;
+    elapsedSeconds: number;
+  };
   message?: string;
   errors?: Array<{ itemId: string; itemName: string; error: string }>;
   activity?: Array<{ timestamp: string; type: string; message: string; details?: any }>;
