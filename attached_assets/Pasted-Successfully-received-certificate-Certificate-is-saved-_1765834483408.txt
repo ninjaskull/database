@@ -1,0 +1,152 @@
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/crm.fallowl.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/crm.fallowl.com/privkey.pem
+This certificate expires on 2026-03-15.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+Deploying certificate
+Successfully deployed certificate for crm.fallowl.com to /etc/nginx/sites-enabled/app
+Successfully deployed certificate for www.crm.fallowl.com to /etc/nginx/sites-enabled/app
+Your existing certificate has been successfully renewed, and the new certificate has been installed.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ubuntu@ip-172-31-40-158:/var/www/app$ ss -lntp | grep 5000
+ubuntu@ip-172-31-40-158:/var/www/app$ npm run start
+# or
+node server.js
+# or
+pm2 start ecosystem.config.js
+
+> rest-express@1.0.0 start
+> NODE_ENV=production node dist/index.js
+
+file:///var/www/app/dist/index.js:984
+  throw new Error(
+        ^
+
+Error: DATABASE_URL must be set. Did you forget to provision a database?
+    at file:///var/www/app/dist/index.js:984:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v20.19.6
+node:internal/modules/cjs/loader:1210
+  throw err;
+  ^
+
+Error: Cannot find module '/var/www/app/server.js'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1207:15)
+    at Module._load (node:internal/modules/cjs/loader:1038:27)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v20.19.6
+[PM2][ERROR] File ecosystem.config.js not found
+ubuntu@ip-172-31-40-158:/var/www/app$ # Create PM2 ecosystem file
+cd /var/www/app
+nano ecosystem.config.cjs
+ubuntu@ip-172-31-40-158:/var/www/app$ # Start with ecosystem file
+pm2 delete app 2>/dev/null; pm2 start ecosystem.config.cjs
+pm2 save
+[PM2] Applying action deleteProcessId on app [app](ids: [ 0 ])
+[PM2] [app](0) ✓
+┌────┬───────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name      │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+└────┴───────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2][WARN] Applications app not running, starting...
+[PM2] App [app] launched (1 instances)
+┌────┬────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name   │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 0  │ app    │ default     │ 1.0.0   │ fork    │ 4221     │ 0s     │ 0    │ online    │ 0%       │ 18.8mb   │ ubuntu   │ disabled │
+└────┴────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2] Saving current process list...
+[PM2] Successfully saved in /home/ubuntu/.pm2/dump.pm2
+ubuntu@ip-172-31-40-158:/var/www/app$ # Install dotenv-cli
+cd /var/www/app
+npm install -g dotenv-cli
+
+# Start app with dotenv loading .env file
+pm2 delete app 2>/dev/null
+pm2 start "dotenv -e .env -- node dist/index.js" --name "app"
+pm2 save
+npm error code EACCES
+npm error syscall mkdir
+npm error path /usr/lib/node_modules/dotenv-cli
+npm error errno -13
+npm error Error: EACCES: permission denied, mkdir '/usr/lib/node_modules/dotenv-cli'
+npm error     at async mkdir (node:internal/fs/promises:858:10)
+npm error     at async /usr/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/reify.js:624:20
+npm error     at async Promise.allSettled (index 0)
+npm error     at async [reifyPackages] (/usr/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/reify.js:325:11)
+npm error     at async Arborist.reify (/usr/lib/node_modules/npm/node_modules/@npmcli/arborist/lib/arborist/reify.js:142:5)
+npm error     at async Install.exec (/usr/lib/node_modules/npm/lib/commands/install.js:150:5)
+npm error     at async Npm.exec (/usr/lib/node_modules/npm/lib/npm.js:207:9)
+npm error     at async module.exports (/usr/lib/node_modules/npm/lib/cli/entry.js:74:5) {
+npm error   errno: -13,
+npm error   code: 'EACCES',
+npm error   syscall: 'mkdir',
+npm error   path: '/usr/lib/node_modules/dotenv-cli'
+npm error }
+npm error
+npm error The operation was rejected by your operating system.
+npm error It is likely you do not have the permissions to access this file as the current user
+npm error
+npm error If you believe this might be a permissions issue, please double-check the
+npm error permissions of the file and its containing directories, or try running
+npm error the command again as root/Administrator.
+npm error A complete log of this run can be found in: /home/ubuntu/.npm/_logs/2025-12-15T21_33_25_632Z-debug-0.log
+[PM2] Applying action deleteProcessId on app [app](ids: [ 0 ])
+[PM2] [app](0) ✓
+┌────┬───────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name      │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+└────┴───────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2] Starting /usr/bin/bash in fork_mode (1 instance)
+[PM2] Done.
+┌────┬────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name   │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 0  │ app    │ default     │ N/A     │ fork    │ 4265     │ 0      │ 0    │ stopped   │ 0%       │ 0b       │ ubuntu   │ disabled │
+└────┴────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2] Saving current process list...
+[PM2] Successfully saved in /home/ubuntu/.pm2/dump.pm2
+ubuntu@ip-172-31-40-158:/var/www/app$ # Load .env variables into current shell and start
+cd /var/www/app
+export $(cat .env | xargs) && pm2 start dist/index.js --name "app"
+pm2 save
+-bash: export: `#': not a valid identifier
+-bash: export: `#': not a valid identifier
+-bash: export: `(Neon)': not a valid identifier
+[PM2] Saving current process list...
+[PM2] Successfully saved in /home/ubuntu/.pm2/dump.pm2
+ubuntu@ip-172-31-40-158:/var/www/app$ pm2 logs app
+pm2 status
+curl http://localhost:5000
+[TAILING] Tailing last 15 lines for [app] process (change the value with --lines option)
+/home/ubuntu/.pm2/logs/app-out.log last 15 lines:
+/home/ubuntu/.pm2/logs/app-error.log last 15 lines:
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+0|app      | /usr/bin/bash: line 1: dotenv: command not found
+
