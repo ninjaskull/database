@@ -509,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get contacts with pagination and filtering (protected route)
-  app.get("/api/contacts", async (req, res) => {
+  app.get("/api/contacts", requireAuth, async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -539,6 +539,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Search contacts by LinkedIn URL in existing database
   // NOTE: This route MUST be registered BEFORE /api/contacts/:id to avoid being caught by the param route
+  // Note: This endpoint is also used by Chrome extension which handles its own auth via extension-routes.ts
   app.get("/api/contacts/linkedin-search", async (req, res) => {
     try {
       const linkedinUrl = req.query.url as string;
@@ -579,7 +580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single contact (protected route)
-  app.get("/api/contacts/:id", async (req, res) => {
+  app.get("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       const contact = await storage.getContact(req.params.id!);
       if (!contact) {
@@ -592,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create contact (protected route)
-  app.post("/api/contacts", async (req, res) => {
+  app.post("/api/contacts", requireAuth, async (req, res) => {
     try {
       // Pre-process data to generate fullName if needed
       const rawData = req.body;
@@ -651,7 +652,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update contact
-  app.patch("/api/contacts/:id", async (req, res) => {
+  app.patch("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       console.log('PATCH request body:', req.body);
       
@@ -738,7 +739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete contact
-  app.delete("/api/contacts/:id", async (req, res) => {
+  app.delete("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       const deleted = await storage.deleteContact(req.params.id);
       if (!deleted) {
@@ -751,7 +752,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk delete contacts
-  app.delete("/api/contacts", async (req, res) => {
+  app.delete("/api/contacts", requireAuth, async (req, res) => {
     try {
       const { ids } = req.body;
       if (!Array.isArray(ids)) {
@@ -766,7 +767,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk update contacts
-  app.patch("/api/contacts/bulk-update", async (req, res) => {
+  app.patch("/api/contacts/bulk-update", requireAuth, async (req, res) => {
     try {
       const { contactIds, updates } = req.body;
       
@@ -890,7 +891,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get contact activities
-  app.get("/api/contacts/:id/activities", async (req, res) => {
+  app.get("/api/contacts/:id/activities", requireAuth, async (req, res) => {
     try {
       const activities = await storage.getContactActivities(req.params.id);
       res.json(activities);
@@ -1249,7 +1250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Ultra-fast auto-map CSV headers using advanced streaming parser and NLP
-  app.post("/api/import/auto-map", upload.single('csv'), async (req, res) => {
+  app.post("/api/import/auto-map", upload.single('csv'), requireAuth, async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -1316,7 +1317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Ultra-fast CSV Import with advanced processing
-  app.post("/api/import", upload.single('csv'), async (req, res) => {
+  app.post("/api/import", upload.single('csv'), requireAuth, async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -1365,7 +1366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get import job status
-  app.get("/api/import/:jobId", async (req, res) => {
+  app.get("/api/import/:jobId", requireAuth, async (req, res) => {
     try {
       const job = await storage.getImportJob(req.params.jobId);
       if (!job) {
@@ -1518,7 +1519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== END COMPANY IMPORT ROUTES ====================
 
   // Fix incorrectly mapped full names
-  app.post("/api/fix-fullnames", async (req, res) => {
+  app.post("/api/fix-fullnames", requireAuth, async (req, res) => {
     try {
       console.log('🔧 Manual full name fix requested');
       const fixedCount = await storage.fixEmptyFullNames();
@@ -1537,7 +1538,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Export contacts
-  app.get("/api/export", async (req, res) => {
+  app.get("/api/export", requireAuth, async (req, res) => {
     try {
       const { contacts: contactsList } = await storage.getContacts({ limit: 10000 });
       
