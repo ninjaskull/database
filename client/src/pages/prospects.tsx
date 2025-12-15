@@ -9,9 +9,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useBulkOperationProgress } from "@/lib/ws-bulk-operations";
+import { apiRequest } from "@/lib/queryClient";
+import { Loader2, CheckCircle2, XCircle, Building2, User, ArrowRight, Activity } from "lucide-react";
+import { format } from "date-fns";
 import type { Contact, Company } from "@shared/schema";
 
 export default function Prospects() {
@@ -19,6 +26,7 @@ export default function Prospects() {
   const [selectedProspect, setSelectedProspect] = useState<Contact | null>(null);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [activeMatchJobId, setActiveMatchJobId] = useState<string | null>(null);
   const [newProspect, setNewProspect] = useState({
     firstName: '',
     lastName: '',
@@ -31,6 +39,33 @@ export default function Prospects() {
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const matchProgress = useBulkOperationProgress({
+    jobId: activeMatchJobId,
+    onProgress: (event) => {
+      console.log("📊 Match progress:", event);
+    },
+    onComplete: (event) => {
+      toast({
+        title: "Matching Complete",
+        description: `Matched ${event.totals?.matched || 0} prospects to companies.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/prospects/unmatched'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
+    },
+    onError: (event) => {
+      toast({
+        title: "Matching Failed",
+        description: event.message || "The matching operation failed.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const isMatchRunning = matchProgress.status === 'running' || matchProgress.status === 'queued';
+  const isMatchComplete = matchProgress.status === 'completed';
+  const isMatchFailed = matchProgress.status === 'failed';
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -117,23 +152,28 @@ export default function Prospects() {
 
   const bulkMatchMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/prospects/bulk-match', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to bulk match');
-      return response.json();
+      const response = await apiRequest("/api/bulk/match", { method: "POST" });
+      return response;
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/prospects/unmatched'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+    onSuccess: (data: any) => {
+      setActiveMatchJobId(data.jobId);
       toast({
-        title: "Bulk matching complete",
-        description: `Matched ${data.matched} prospects. ${data.unmatched} still unmatched.`,
+        title: "Starting Match Operation",
+        description: "Matching contacts to companies with real-time progress...",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to start bulk match operation",
+        variant: "destructive",
       });
     },
   });
+
+  const resetMatchProgress = () => {
+    setActiveMatchJobId(null);
+  };
 
   const assignCompanyMutation = useMutation({
     mutationFn: async ({ prospectId, companyId }: { prospectId: string, companyId: string }) => {
@@ -333,18 +373,156 @@ export default function Prospects() {
                             These prospects couldn't be automatically matched to a company. Assign them manually.
                           </CardDescription>
                         </div>
-                        <Button 
-                          variant="outline" 
-                          onClick={() => bulkMatchMutation.mutate()}
-                          disabled={bulkMatchMutation.isPending}
-                          data-testid="button-bulk-match"
-                        >
-                          <i className="fas fa-sync-alt mr-2"></i>
-                          {bulkMatchMutation.isPending ? 'Matching...' : 'Retry Matching'}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          {activeMatchJobId && (isMatchComplete || isMatchFailed) && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={resetMatchProgress}
+                              data-testid="button-dismiss-progress"
+                            >
+                              Dismiss
+                            </Button>
+                          )}
+                          <Button 
+                            variant="outline" 
+                            onClick={() => bulkMatchMutation.mutate()}
+                            disabled={bulkMatchMutation.isPending || isMatchRunning}
+                            data-testid="button-bulk-match"
+                          >
+                            {isMatchRunning ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Matching...
+                              </>
+                            ) : (
+                              <>
+                                <i className="fas fa-sync-alt mr-2"></i>
+                                Retry Matching
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
+                      {activeMatchJobId && (
+                        <div className="mb-6 space-y-4 p-4 bg-muted/50 rounded-lg" data-testid="match-progress-panel">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {isMatchRunning && <Loader2 className="h-5 w-5 animate-spin text-blue-500" />}
+                              {isMatchComplete && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                              {isMatchFailed && <XCircle className="h-5 w-5 text-red-500" />}
+                              <div>
+                                <p className="font-medium">
+                                  {isMatchRunning ? 'Matching in Progress' : isMatchComplete ? 'Matching Complete' : 'Matching Failed'}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {matchProgress.message || 'Processing...'}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge variant={isMatchRunning ? "default" : isMatchComplete ? "outline" : "destructive"}>
+                              {matchProgress.status}
+                            </Badge>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span>Progress</span>
+                              <span className="font-medium">{matchProgress.percentComplete}%</span>
+                            </div>
+                            <Progress value={matchProgress.percentComplete} className="h-2" data-testid="match-progress-bar" />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>{matchProgress.processed} of {matchProgress.total} processed</span>
+                              {isMatchRunning && matchProgress.current?.name && (
+                                <span>Processing: {matchProgress.current.name}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <Separator />
+
+                          <div className="grid grid-cols-4 gap-4 text-center">
+                            <div className="space-y-1" data-testid="match-stat-success">
+                              <div className="text-xl font-bold text-green-600">{matchProgress.success}</div>
+                              <div className="text-xs text-muted-foreground">Success</div>
+                            </div>
+                            <div className="space-y-1" data-testid="match-stat-matched">
+                              <div className="text-xl font-bold text-blue-600">{matchProgress.matched}</div>
+                              <div className="text-xs text-muted-foreground">Matched</div>
+                            </div>
+                            <div className="space-y-1" data-testid="match-stat-skipped">
+                              <div className="text-xl font-bold text-yellow-600">{matchProgress.skipped}</div>
+                              <div className="text-xs text-muted-foreground">Skipped</div>
+                            </div>
+                            <div className="space-y-1" data-testid="match-stat-failed">
+                              <div className="text-xl font-bold text-red-600">{matchProgress.failed}</div>
+                              <div className="text-xs text-muted-foreground">Failed</div>
+                            </div>
+                          </div>
+
+                          {matchProgress.current && isMatchRunning && (
+                            <>
+                              <Separator />
+                              <div className="bg-background rounded-lg p-3 space-y-2" data-testid="current-match-item">
+                                <div className="flex items-center gap-2 text-sm font-medium">
+                                  <User className="h-4 w-4" />
+                                  <span>Currently Processing</span>
+                                </div>
+                                <div className="pl-6 space-y-1">
+                                  <p className="font-medium">{matchProgress.current.name}</p>
+                                  {matchProgress.current.step && (
+                                    <p className="text-xs text-muted-foreground">{matchProgress.current.step}</p>
+                                  )}
+                                  {matchProgress.current.companyMatched && (
+                                    <div className="flex items-center gap-2 text-xs text-green-600">
+                                      <Building2 className="h-3 w-3" />
+                                      <ArrowRight className="h-3 w-3" />
+                                      <span>{matchProgress.current.companyMatched}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {matchProgress.activity.length > 0 && (
+                            <>
+                              <Separator />
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-sm font-medium">
+                                  <Activity className="h-4 w-4" />
+                                  <span>Activity Log</span>
+                                  <Badge variant="outline" className="ml-auto text-xs">
+                                    {matchProgress.activity.length} entries
+                                  </Badge>
+                                </div>
+                                <ScrollArea className="h-[120px] rounded-lg border p-2" data-testid="match-activity-log">
+                                  <div className="space-y-1">
+                                    {[...matchProgress.activity].reverse().slice(0, 30).map((entry, idx) => (
+                                      <div key={idx} className="flex items-start gap-2 text-xs">
+                                        <span className="text-muted-foreground whitespace-nowrap">
+                                          {format(new Date(entry.timestamp), "HH:mm:ss")}
+                                        </span>
+                                        <span className={
+                                          entry.type === 'Matched' ? 'text-green-600' :
+                                          entry.type === 'Failed' ? 'text-red-600' :
+                                          entry.type.includes('Skipped') ? 'text-yellow-600' :
+                                          'text-foreground'
+                                        }>
+                                          {entry.message}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
                       {loadingUnmatched ? (
                         <div className="text-center py-8">Loading...</div>
                       ) : unmatchedProspects?.length === 0 ? (
