@@ -232,6 +232,7 @@ export interface UseImportProgressOptions {
   onComplete?: (event: ImportProgressEvent) => void;
   onError?: (event: ImportProgressEvent) => void;
   fallbackPollingInterval?: number;
+  startPollingImmediately?: boolean;
 }
 
 export interface ImportProgressState {
@@ -249,7 +250,7 @@ export interface ImportProgressState {
 }
 
 export function useImportProgress(options: UseImportProgressOptions): ImportProgressState {
-  const { jobId, onProgress, onComplete, onError, fallbackPollingInterval = 1500 } = options;
+  const { jobId, onProgress, onComplete, onError, fallbackPollingInterval = 1500, startPollingImmediately = false } = options;
   
   const [state, setState] = useState<ImportProgressState>({
     isConnected: false,
@@ -389,24 +390,31 @@ export function useImportProgress(options: UseImportProgressOptions): ImportProg
       }
     });
 
+    // Start polling immediately if requested, or after a delay as fallback
+    if (startPollingImmediately) {
+      // Start polling right away - don't wait for WebSocket
+      console.log('📡 Starting polling immediately (parallel with WebSocket)');
+      startPolling(jobId);
+    }
+
     // Start polling as fallback after initial delay if no WS updates received
     const pollingTimeout = setTimeout(() => {
-      if (!wsActiveRef.current && !state.isComplete) {
+      if (!wsActiveRef.current && !state.isComplete && !pollingRef.current) {
         console.log('📡 No WebSocket updates, starting polling fallback');
         startPolling(jobId);
       }
-    }, 2000);
+    }, startPollingImmediately ? 500 : 1500); // Shorter timeout if already polling
 
-    // Safety timeout: if no WS updates for 5 seconds during processing, start polling
+    // Safety timeout: if no WS updates for 3 seconds during processing, start polling
     const safetyInterval = window.setInterval(() => {
       const now = Date.now();
       const timeSinceLastUpdate = now - lastWsUpdateRef.current;
       
-      if (wsActiveRef.current && timeSinceLastUpdate > 5000 && !state.isComplete && !pollingRef.current) {
-        console.log('📡 No WS updates for 5s, starting safety polling');
+      if (timeSinceLastUpdate > 3000 && !state.isComplete && !pollingRef.current) {
+        console.log('📡 No WS updates for 3s, starting safety polling');
         startPolling(jobId);
       }
-    }, 2000);
+    }, 1500);
 
     return () => {
       unsubscribe();
@@ -418,7 +426,7 @@ export function useImportProgress(options: UseImportProgressOptions): ImportProg
         window.clearTimeout(completionTimeoutRef.current);
       }
     };
-  }, [jobId, handleProgress, startPolling, stopPolling, state.isComplete]);
+  }, [jobId, handleProgress, startPolling, stopPolling, state.isComplete, startPollingImmediately]);
 
   return state;
 }

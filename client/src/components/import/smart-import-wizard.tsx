@@ -97,8 +97,9 @@ export function SmartImportWizard() {
   const { toast } = useToast();
 
   // WebSocket-based real-time progress tracking with polling fallback
+  // Subscribe as soon as jobId is available (not waiting for step change)
   const wsProgress = useImportProgress({
-    jobId: step === 'progress' ? jobId : null,
+    jobId: jobId,
     onComplete: () => {
       setStep('complete');
       queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
@@ -114,7 +115,8 @@ export function SmartImportWizard() {
         variant: "destructive",
       });
     },
-    fallbackPollingInterval: 1500,
+    fallbackPollingInterval: 1000, // Faster polling for better responsiveness
+    startPollingImmediately: true, // Start polling right away
   });
 
   // Also keep the query for the complete step to show final stats
