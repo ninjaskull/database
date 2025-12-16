@@ -29,6 +29,86 @@ const bulkEnrichSchema = z.object({
   contactIds: z.array(z.string()),
 });
 
+// Contact Correction Schemas
+const correctNameSchema = z.object({
+  fullName: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+}).refine(data => data.fullName || data.firstName || data.lastName, {
+  message: "At least one name field is required",
+});
+
+const validatePhoneSchema = z.object({
+  phone: z.string().min(1, "Phone number is required"),
+  country: z.string().optional(),
+});
+
+const correctEmailSchema = z.object({
+  email: z.string().min(1, "Email is required"),
+});
+
+const standardizeAddressSchema = z.object({
+  city: z.string().optional(),
+  state: z.string().optional(),
+  country: z.string().optional(),
+  companyCity: z.string().optional(),
+  companyState: z.string().optional(),
+  companyCountry: z.string().optional(),
+}).refine(data => data.city || data.state || data.country || data.companyCity || data.companyState || data.companyCountry, {
+  message: "At least one address field is required",
+});
+
+const normalizeCompanySchema = z.object({
+  companyName: z.string().min(1, "Company name is required"),
+});
+
+const standardizeTitleSchema = z.object({
+  title: z.string().min(1, "Job title is required"),
+});
+
+const assessQualitySchema = z.object({
+  fullName: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  email: z.string().optional(),
+  mobilePhone: z.string().optional(),
+  company: z.string().optional(),
+  title: z.string().optional(),
+  city: z.string().optional(),
+  country: z.string().optional(),
+  industry: z.string().optional(),
+});
+
+const suggestMergeSchema = z.object({
+  contact1: z.record(z.any()),
+  contact2: z.record(z.any()),
+});
+
+const inferMissingSchema = z.object({
+  fullName: z.string().optional(),
+  email: z.string().optional(),
+  company: z.string().optional(),
+  title: z.string().optional(),
+  website: z.string().optional(),
+  mobilePhone: z.string().optional(),
+});
+
+const bulkCorrectSchema = z.object({
+  contacts: z.array(z.object({
+    id: z.string(),
+    fullName: z.string().optional(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    email: z.string().optional(),
+    mobilePhone: z.string().optional(),
+    company: z.string().optional(),
+    title: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    country: z.string().optional(),
+  })).min(1, "At least one contact is required"),
+});
+
 router.get("/status", async (_req: Request, res: Response) => {
   try {
     const configured = aiService.isConfigured();
@@ -49,6 +129,16 @@ router.get("/status", async (_req: Request, res: Response) => {
           "Activity Pattern Analysis",
           "Next Best Actions",
           "Company Fit Analysis",
+          "AI Name Correction",
+          "Phone Number Validation",
+          "Email Typo Correction",
+          "Address Standardization",
+          "Company Name Normalization",
+          "Job Title Standardization",
+          "Data Quality Assessment",
+          "Smart Merge Suggestions",
+          "Missing Data Inference",
+          "Bulk Data Correction",
         ],
       },
     });
@@ -777,6 +867,278 @@ router.post("/company-fit", async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("[AI Routes] Company fit error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// ==================== CONTACT CORRECTION AI ROUTES ====================
+
+// Correct contact name
+router.post("/correct-name", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = correctNameSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.correctContactName(parsed.data);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Name correction error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Validate phone number
+router.post("/validate-phone", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = validatePhoneSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.validatePhoneNumber(parsed.data.phone, parsed.data.country);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Phone validation error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Correct email
+router.post("/correct-email", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = correctEmailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.correctEmail(parsed.data.email);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Email correction error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Standardize address
+router.post("/standardize-address", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = standardizeAddressSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.standardizeAddress(parsed.data);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Address standardization error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Normalize company name
+router.post("/normalize-company", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = normalizeCompanySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.normalizeCompanyName(parsed.data.companyName);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Company normalization error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Standardize job title
+router.post("/standardize-title", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = standardizeTitleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.standardizeJobTitle(parsed.data.title);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Title standardization error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Assess data quality
+router.post("/assess-quality", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = assessQualitySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.assessDataQuality(parsed.data);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Data quality assessment error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Suggest merge fields for duplicates
+router.post("/suggest-merge", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = suggestMergeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.suggestMergeFields(parsed.data.contact1, parsed.data.contact2);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Merge suggestion error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Infer missing data
+router.post("/infer-missing", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = inferMissingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.inferMissingData(parsed.data);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Missing data inference error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Bulk correct contacts
+router.post("/bulk-correct", async (req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({ success: false, error: "AI service not configured" });
+    }
+
+    const parsed = bulkCorrectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.message });
+    }
+
+    const result = await aiService.bulkCorrectContacts(parsed.data.contacts);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[AI Routes] Bulk correction error:", error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

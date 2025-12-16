@@ -2,7 +2,21 @@
 
 This is a modern full-stack CRM application for managing contact databases. Built with React on the frontend, Express on the backend, and PostgreSQL with Drizzle ORM for data management. The application features comprehensive contact management with data enrichment capabilities, CSV import functionality, and real-time activity tracking.
 
-## Recent Changes (Dec 14, 2025)
+## Recent Changes (Dec 16, 2025)
+- **AI Contact Correction Features**: Added 10 new AI-powered contact data correction capabilities:
+  - Name correction and standardization (fixes capitalization, reversed names, misspellings)
+  - Phone number validation and formatting (international formats, E.164)
+  - Email typo detection and correction (common domain mistakes)
+  - Address standardization (expands abbreviations, official names)
+  - Company name normalization (legal suffixes, parent company detection)
+  - Job title standardization (maps informal to professional titles)
+  - Data quality assessment (completeness and accuracy scoring)
+  - Smart merge suggestions for duplicate contacts
+  - Missing data inference from available signals
+  - Bulk contact correction for batch processing
+- **Enhanced AI Routes**: All 10 new routes include comprehensive Zod validation schemas
+
+## Previous Changes (Dec 14, 2025)
 - **Chrome Extension Documentation**: Created comprehensive technical documentation at `CHROME_EXTENSION_DOCUMENTATION.md` covering:
   - Complete authentication flow between dashboard and extension
   - All extension API endpoints (`/api/extension/validate`, `/lookup`, `/search`)

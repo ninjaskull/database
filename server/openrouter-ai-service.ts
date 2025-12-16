@@ -975,6 +975,662 @@ Return valid JSON only.`;
       expansionPotential: "Unknown",
     };
   }
+
+  // ==================== CONTACT CORRECTION AI FEATURES ====================
+
+  async correctContactName(contact: {
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+  }): Promise<{
+    correctedFullName: string;
+    correctedFirstName: string;
+    correctedLastName: string;
+    corrections: Array<{ field: string; original: string; corrected: string; reason: string }>;
+    confidence: number;
+  }> {
+    const prompt = `Analyze and correct this contact name:
+Full Name: "${contact.fullName || ""}"
+First Name: "${contact.firstName || ""}"
+Last Name: "${contact.lastName || ""}"
+
+Tasks:
+1. Fix capitalization issues (JOHN SMITH → John Smith)
+2. Fix reversed names if detected (Doe John → John Doe)
+3. Properly split first and last name
+4. Fix common misspellings
+5. Handle middle names appropriately
+6. Handle suffixes (Jr, Sr, III) correctly
+
+Return JSON:
+{
+  "correctedFullName": "properly formatted full name",
+  "correctedFirstName": "first name only",
+  "correctedLastName": "last name only",
+  "corrections": [
+    { "field": "fullName|firstName|lastName", "original": "original value", "corrected": "new value", "reason": "explanation" }
+  ],
+  "confidence": 0-100
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a data quality specialist for CRM systems. Correct names accurately while preserving cultural naming conventions. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "name_correction", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse name correction:", e);
+    }
+    
+    return {
+      correctedFullName: contact.fullName || "",
+      correctedFirstName: contact.firstName || "",
+      correctedLastName: contact.lastName || "",
+      corrections: [],
+      confidence: 0,
+    };
+  }
+
+  async validatePhoneNumber(phone: string, country?: string): Promise<{
+    formattedNumber: string;
+    countryCode: string;
+    isValid: boolean;
+    corrections: Array<{ original: string; corrected: string; reason: string }>;
+    phoneType: "mobile" | "landline" | "unknown";
+  }> {
+    const prompt = `Validate and format this phone number:
+Phone: "${phone}"
+Country hint: "${country || "Unknown"}"
+
+Tasks:
+1. Detect and add proper country code if missing
+2. Format consistently with spaces/dashes
+3. Fix common typos (extra digits, missing digits)
+4. Determine if mobile or landline
+5. Validate if the number looks real
+
+Return JSON:
+{
+  "formattedNumber": "properly formatted number with country code (e.g., +1 555-123-4567)",
+  "countryCode": "ISO country code (e.g., US, IN, UK)",
+  "isValid": true/false,
+  "corrections": [
+    { "original": "original", "corrected": "corrected", "reason": "explanation" }
+  ],
+  "phoneType": "mobile" | "landline" | "unknown"
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a phone number validation specialist. Format numbers according to international standards (E.164). Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "phone_validation", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse phone validation:", e);
+    }
+    
+    return {
+      formattedNumber: phone,
+      countryCode: "Unknown",
+      isValid: false,
+      corrections: [],
+      phoneType: "unknown",
+    };
+  }
+
+  async correctEmail(email: string): Promise<{
+    correctedEmail: string;
+    isValid: boolean;
+    corrections: Array<{ original: string; corrected: string; reason: string }>;
+    confidence: number;
+    domainType: "corporate" | "personal" | "educational" | "unknown";
+  }> {
+    const prompt = `Validate and correct this email address:
+Email: "${email}"
+
+Common typos to check:
+- gmial.com → gmail.com
+- gmil.com → gmail.com
+- yahho.com → yahoo.com
+- hotmal.com → hotmail.com
+- outloo.com → outlook.com
+- .con → .com
+- Double @ symbols
+- Missing TLD
+
+Return JSON:
+{
+  "correctedEmail": "corrected email address",
+  "isValid": true/false,
+  "corrections": [
+    { "original": "original", "corrected": "corrected", "reason": "explanation" }
+  ],
+  "confidence": 0-100,
+  "domainType": "corporate" | "personal" | "educational" | "unknown"
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are an email validation specialist. Detect and fix common email typos while maintaining accuracy. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "email_correction", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse email correction:", e);
+    }
+    
+    return {
+      correctedEmail: email,
+      isValid: false,
+      corrections: [],
+      confidence: 0,
+      domainType: "unknown",
+    };
+  }
+
+  async standardizeAddress(address: {
+    city?: string;
+    state?: string;
+    country?: string;
+    companyCity?: string;
+    companyState?: string;
+    companyCountry?: string;
+  }): Promise<{
+    standardizedCity: string;
+    standardizedState: string;
+    standardizedCountry: string;
+    countryCode: string;
+    corrections: Array<{ field: string; original: string; corrected: string; reason: string }>;
+    confidence: number;
+  }> {
+    const prompt = `Standardize these location fields:
+City: "${address.city || address.companyCity || ""}"
+State: "${address.state || address.companyState || ""}"
+Country: "${address.country || address.companyCountry || ""}"
+
+Tasks:
+1. Expand abbreviations (CA → California, UK → United Kingdom)
+2. Fix common misspellings
+3. Standardize to official names
+4. Add ISO country code
+
+Return JSON:
+{
+  "standardizedCity": "proper city name",
+  "standardizedState": "full state/province name",
+  "standardizedCountry": "full country name",
+  "countryCode": "2-letter ISO code",
+  "corrections": [
+    { "field": "city|state|country", "original": "original", "corrected": "corrected", "reason": "explanation" }
+  ],
+  "confidence": 0-100
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a geographic data specialist. Standardize location names to their official forms. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "address_standardization", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse address standardization:", e);
+    }
+    
+    return {
+      standardizedCity: address.city || address.companyCity || "",
+      standardizedState: address.state || address.companyState || "",
+      standardizedCountry: address.country || address.companyCountry || "",
+      countryCode: "",
+      corrections: [],
+      confidence: 0,
+    };
+  }
+
+  async normalizeCompanyName(companyName: string): Promise<{
+    normalizedName: string;
+    legalSuffix: string;
+    parentCompany: string | null;
+    corrections: Array<{ original: string; corrected: string; reason: string }>;
+    confidence: number;
+  }> {
+    const prompt = `Normalize this company name:
+Company: "${companyName}"
+
+Tasks:
+1. Standardize legal suffixes (LLC, Inc., Ltd., Pvt Ltd, etc.)
+2. Fix capitalization
+3. Remove extra spaces/characters
+4. Identify if it's a subsidiary (mention parent if known)
+5. Standardize common variations
+
+Return JSON:
+{
+  "normalizedName": "clean company name with standard suffix",
+  "legalSuffix": "LLC|Inc|Ltd|Corp|etc or empty",
+  "parentCompany": "parent company name if known, or null",
+  "corrections": [
+    { "original": "original", "corrected": "corrected", "reason": "explanation" }
+  ],
+  "confidence": 0-100
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a business data specialist. Normalize company names while maintaining accuracy. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "company_normalization", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse company normalization:", e);
+    }
+    
+    return {
+      normalizedName: companyName,
+      legalSuffix: "",
+      parentCompany: null,
+      corrections: [],
+      confidence: 0,
+    };
+  }
+
+  async standardizeJobTitle(title: string): Promise<{
+    standardizedTitle: string;
+    seniorityLevel: "entry" | "mid" | "senior" | "executive" | "c-level" | "unknown";
+    department: string;
+    corrections: Array<{ original: string; corrected: string; reason: string }>;
+    confidence: number;
+  }> {
+    const prompt = `Standardize this job title:
+Title: "${title}"
+
+Tasks:
+1. Map informal titles to standard ones (Dev → Developer, PM → Project Manager)
+2. Fix capitalization
+3. Determine seniority level
+4. Identify likely department
+5. Expand abbreviations
+
+Return JSON:
+{
+  "standardizedTitle": "professional standardized title",
+  "seniorityLevel": "entry" | "mid" | "senior" | "executive" | "c-level" | "unknown",
+  "department": "likely department (Sales, Engineering, Marketing, etc.)",
+  "corrections": [
+    { "original": "original", "corrected": "corrected", "reason": "explanation" }
+  ],
+  "confidence": 0-100
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are an HR data specialist. Standardize job titles to professional formats. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "title_standardization", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse title standardization:", e);
+    }
+    
+    return {
+      standardizedTitle: title,
+      seniorityLevel: "unknown",
+      department: "Unknown",
+      corrections: [],
+      confidence: 0,
+    };
+  }
+
+  async assessDataQuality(contact: {
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    mobilePhone?: string;
+    company?: string;
+    title?: string;
+    city?: string;
+    country?: string;
+    industry?: string;
+  }): Promise<{
+    overallScore: number;
+    completenessScore: number;
+    accuracyScore: number;
+    issues: Array<{ field: string; issue: string; severity: "high" | "medium" | "low"; suggestion: string }>;
+    priorityFixes: Array<{ field: string; action: string; impact: string }>;
+  }> {
+    const prompt = `Assess the data quality of this contact record:
+
+Full Name: "${contact.fullName || ""}"
+First Name: "${contact.firstName || ""}"
+Last Name: "${contact.lastName || ""}"
+Email: "${contact.email || ""}"
+Phone: "${contact.mobilePhone || ""}"
+Company: "${contact.company || ""}"
+Title: "${contact.title || ""}"
+City: "${contact.city || ""}"
+Country: "${contact.country || ""}"
+Industry: "${contact.industry || ""}"
+
+Evaluate:
+1. Completeness - are important fields filled?
+2. Accuracy - do values look correct?
+3. Consistency - do fields match each other?
+4. Identify specific issues and fixes
+
+Return JSON:
+{
+  "overallScore": 0-100,
+  "completenessScore": 0-100,
+  "accuracyScore": 0-100,
+  "issues": [
+    { "field": "field name", "issue": "description of problem", "severity": "high|medium|low", "suggestion": "how to fix" }
+  ],
+  "priorityFixes": [
+    { "field": "field name", "action": "what to do", "impact": "expected improvement" }
+  ]
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a CRM data quality analyst. Assess contact records thoroughly and provide actionable recommendations. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "data_quality_assessment", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse data quality assessment:", e);
+    }
+    
+    return {
+      overallScore: 0,
+      completenessScore: 0,
+      accuracyScore: 0,
+      issues: [],
+      priorityFixes: [],
+    };
+  }
+
+  async suggestMergeFields(contact1: Record<string, any>, contact2: Record<string, any>): Promise<{
+    mergedRecord: Record<string, any>;
+    fieldDecisions: Array<{ field: string; chosenValue: any; source: "contact1" | "contact2" | "merged"; reason: string }>;
+    conflicts: Array<{ field: string; value1: any; value2: any; recommendation: string }>;
+    confidence: number;
+  }> {
+    const prompt = `Suggest how to merge these two duplicate contacts:
+
+CONTACT 1:
+${JSON.stringify(contact1, null, 2)}
+
+CONTACT 2:
+${JSON.stringify(contact2, null, 2)}
+
+For each field, decide which value to keep or how to merge them.
+Prefer: more complete data, more recent data, more professional formatting.
+
+Return JSON:
+{
+  "mergedRecord": { merged field values },
+  "fieldDecisions": [
+    { "field": "field name", "chosenValue": "the value", "source": "contact1|contact2|merged", "reason": "why this choice" }
+  ],
+  "conflicts": [
+    { "field": "field name", "value1": "value from contact1", "value2": "value from contact2", "recommendation": "what to do" }
+  ],
+  "confidence": 0-100
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a CRM deduplication specialist. Make intelligent decisions about which data to keep when merging records. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "merge_suggestion", useCache: false }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse merge suggestion:", e);
+    }
+    
+    return {
+      mergedRecord: { ...contact2, ...contact1 },
+      fieldDecisions: [],
+      conflicts: [],
+      confidence: 0,
+    };
+  }
+
+  async inferMissingData(contact: {
+    fullName?: string;
+    email?: string;
+    company?: string;
+    title?: string;
+    website?: string;
+    mobilePhone?: string;
+  }): Promise<{
+    inferredIndustry: string | null;
+    inferredCountry: string | null;
+    inferredCompanySize: string | null;
+    inferredDepartment: string | null;
+    inferences: Array<{ field: string; value: string; confidence: number; reasoning: string }>;
+  }> {
+    const prompt = `Infer missing data from available contact information:
+
+Name: "${contact.fullName || ""}"
+Email: "${contact.email || ""}"
+Company: "${contact.company || ""}"
+Title: "${contact.title || ""}"
+Website: "${contact.website || ""}"
+Phone: "${contact.mobilePhone || ""}"
+
+From these clues, infer:
+1. Industry (from company name, email domain, or website)
+2. Country (from phone format, email domain, or company)
+3. Likely company size bracket
+4. Department (from job title)
+
+Return JSON:
+{
+  "inferredIndustry": "likely industry or null if unknown",
+  "inferredCountry": "likely country or null if unknown",
+  "inferredCompanySize": "1-10|11-50|51-200|201-500|501-1000|1001-5000|5000+ or null",
+  "inferredDepartment": "Sales|Engineering|Marketing|HR|Finance|Operations|Executive|Other or null",
+  "inferences": [
+    { "field": "field name", "value": "inferred value", "confidence": 0-100, "reasoning": "how you determined this" }
+  ]
+}
+
+Only include inferences with confidence > 50. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a data enrichment specialist. Make intelligent inferences from available data signals. Only infer when you have reasonable confidence. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "missing_data_inference", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse missing data inference:", e);
+    }
+    
+    return {
+      inferredIndustry: null,
+      inferredCountry: null,
+      inferredCompanySize: null,
+      inferredDepartment: null,
+      inferences: [],
+    };
+  }
+
+  async bulkCorrectContacts(contacts: Array<{
+    id: string;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    mobilePhone?: string;
+    company?: string;
+    title?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+  }>): Promise<{
+    corrections: Array<{
+      contactId: string;
+      field: string;
+      originalValue: string;
+      correctedValue: string;
+      correctionType: string;
+      confidence: number;
+    }>;
+    summary: {
+      totalContacts: number;
+      contactsWithIssues: number;
+      totalCorrections: number;
+      correctionsByType: Record<string, number>;
+    };
+  }> {
+    const contactList = contacts.slice(0, 50).map(c => 
+      `ID:${c.id} | Name:${c.fullName || ""} | Email:${c.email || ""} | Phone:${c.mobilePhone || ""} | Company:${c.company || ""} | Title:${c.title || ""} | Location:${[c.city, c.state, c.country].filter(Boolean).join(", ")}`
+    ).join("\n");
+
+    const prompt = `Analyze these contacts for data quality issues and suggest corrections:
+
+${contactList}
+
+For each contact, identify:
+1. Name issues (capitalization, reversed, misspelled)
+2. Email typos (wrong domains)
+3. Phone formatting issues
+4. Company name inconsistencies
+5. Title standardization needs
+6. Location abbreviations to expand
+
+Return JSON:
+{
+  "corrections": [
+    {
+      "contactId": "the contact ID",
+      "field": "fullName|email|mobilePhone|company|title|city|state|country",
+      "originalValue": "original value",
+      "correctedValue": "corrected value",
+      "correctionType": "capitalization|typo|formatting|standardization|expansion",
+      "confidence": 0-100
+    }
+  ],
+  "summary": {
+    "totalContacts": number,
+    "contactsWithIssues": number,
+    "totalCorrections": number,
+    "correctionsByType": { "type": count }
+  }
+}
+
+Only include corrections with confidence > 70. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a bulk data quality specialist. Efficiently identify and correct data issues across multiple records. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "bulk_correction", useCache: false }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse bulk corrections:", e);
+    }
+    
+    return {
+      corrections: [],
+      summary: {
+        totalContacts: contacts.length,
+        contactsWithIssues: 0,
+        totalCorrections: 0,
+        correctionsByType: {},
+      },
+    };
+  }
 }
 
 export const aiService = new OpenRouterAIService();
