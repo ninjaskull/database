@@ -508,6 +508,42 @@ export const bulkOperationJobs = pgTable("bulk_operation_jobs", {
   index("bulk_operation_jobs_created_at_idx").on(table.createdAt),
 ]);
 
+// ============ AI SERVICE TABLES ============
+
+export const aiUsageLogs = pgTable("ai_usage_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  operationType: text("operation_type").notNull(),
+  model: text("model").notNull(),
+  promptTokens: integer("prompt_tokens").default(0),
+  completionTokens: integer("completion_tokens").default(0),
+  totalTokens: integer("total_tokens").default(0),
+  success: boolean("success").default(true),
+  errorMessage: text("error_message"),
+  contactId: varchar("contact_id").references(() => contacts.id),
+  cached: boolean("cached").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("ai_usage_logs_operation_type_idx").on(table.operationType),
+  index("ai_usage_logs_created_at_idx").on(table.createdAt),
+  index("ai_usage_logs_success_idx").on(table.success),
+  index("ai_usage_logs_contact_id_idx").on(table.contactId),
+]);
+
+export const aiResponseCache = pgTable("ai_response_cache", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cacheKey: text("cache_key").unique().notNull(),
+  promptHash: text("prompt_hash").notNull(),
+  model: text("model").notNull(),
+  responseContent: text("response_content").notNull(),
+  usage: jsonb("usage"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("ai_response_cache_cache_key_idx").on(table.cacheKey),
+  index("ai_response_cache_expires_at_idx").on(table.expiresAt),
+]);
+
 // Relations
 export const companiesRelations = relations(companies, ({ many }) => ({
   contacts: many(contacts),
@@ -670,6 +706,18 @@ export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans
   updatedAt: true,
 });
 
+// AI service schemas
+export const insertAiUsageLogSchema = createInsertSchema(aiUsageLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAiResponseCacheSchema = createInsertSchema(aiResponseCache).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -725,6 +773,12 @@ export type BulkOperationJob = typeof bulkOperationJobs.$inferSelect;
 export type InsertBulkOperationJob = z.infer<typeof insertBulkOperationJobSchema>;
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+
+// AI service types
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
+export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
+export type AiResponseCache = typeof aiResponseCache.$inferSelect;
+export type InsertAiResponseCache = z.infer<typeof insertAiResponseCacheSchema>;
 
 // Bulk operation progress event types
 export interface BulkProgressEvent {

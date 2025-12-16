@@ -17,6 +17,7 @@ import { apiV1Router } from "./api-v1-routes";
 import { API_SCOPES } from "./api-v1-middleware";
 import { wsHub } from "./ws-hub";
 import { extensionRouter } from "./extension-routes";
+import aiRouter from "./ai-routes";
 import fs from "fs";
 import path from "path";
 
@@ -63,6 +64,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Chrome extension routes
   app.use("/api/extension", extensionRouter);
   console.log("✅ Chrome extension routes registered at /api/extension");
+
+  // Register AI routes
+  app.use("/api/ai", aiRouter);
+  console.log("✅ AI routes registered at /api/ai");
 
   // Authentication routes
   app.post("/api/login", async (req, res) => {

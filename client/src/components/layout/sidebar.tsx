@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, LayoutDashboard, Users, Building2, UserPlus, Upload, Linkedin, BarChart3, Database, Settings, Sparkles, TrendingUp, Zap, AlertCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, LayoutDashboard, Users, Building2, UserPlus, Upload, Linkedin, BarChart3, Database, Settings, Sparkles, TrendingUp, Zap, AlertCircle, Brain } from "lucide-react";
 
 interface NavItem {
   name: string;
@@ -24,6 +24,7 @@ const workspaces: NavGroup[] = [
     items: [
       { name: 'Dashboard', href: '/', icon: <LayoutDashboard className="w-4 h-4" /> },
       { name: 'Analytics', href: '/analytics', icon: <BarChart3 className="w-4 h-4" /> },
+      { name: 'AI Insights', href: '/ai-insights', icon: <Brain className="w-4 h-4" /> },
     ]
   },
   {

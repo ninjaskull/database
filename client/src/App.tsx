@@ -13,6 +13,7 @@ import Analytics from "@/pages/analytics";
 import LinkedInSearch from "@/pages/linkedin-search";
 import DatabaseManagement from "@/pages/database-management";
 import ExtensionAuth from "@/pages/extension-auth";
+import AIInsights from "@/pages/ai-insights";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import { useAuth } from "@/hooks/useAuth";
@@ -54,6 +55,7 @@ function Router() {
       <Route path="/import" component={ImportPage} />
       <Route path="/linkedin-search" component={LinkedInSearch} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/ai-insights" component={AIInsights} />
       <Route path="/database" component={DatabaseManagement} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/extension-auth" component={ExtensionAuth} />
