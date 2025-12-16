@@ -524,6 +524,457 @@ Write a 2-3 sentence professional summary highlighting key points and potential 
     
     return result.length;
   }
+
+  // ============ ENTERPRISE AI FEATURES ============
+
+  async predictiveLeadScore(contact: {
+    fullName?: string;
+    email?: string;
+    company?: string;
+    title?: string;
+    industry?: string;
+    employees?: number;
+    website?: string;
+    city?: string;
+    country?: string;
+    activities?: Array<{ type: string; date: string; description: string }>;
+  }): Promise<{
+    score: number;
+    confidence: string;
+    factors: Array<{ factor: string; impact: string; weight: number }>;
+    recommendation: string;
+    nextBestAction: string;
+    conversionProbability: number;
+    timeToConvert: string;
+  }> {
+    const activitySummary = contact.activities?.slice(0, 10).map(a => 
+      `${a.type}: ${a.description} (${a.date})`
+    ).join("\n") || "No activity history";
+
+    const prompt = `Analyze this contact for enterprise lead scoring with predictive analytics:
+
+CONTACT DATA:
+Name: ${contact.fullName || "Unknown"}
+Email: ${contact.email || "Unknown"}
+Company: ${contact.company || "Unknown"}
+Title: ${contact.title || "Unknown"}
+Industry: ${contact.industry || "Unknown"}
+Company Size: ${contact.employees || "Unknown"} employees
+Website: ${contact.website || "Unknown"}
+Location: ${[contact.city, contact.country].filter(Boolean).join(", ") || "Unknown"}
+
+ACTIVITY HISTORY:
+${activitySummary}
+
+Provide a comprehensive predictive lead scoring analysis in JSON format:
+{
+  "score": 0-100 (enterprise lead score),
+  "confidence": "high" | "medium" | "low",
+  "factors": [
+    { "factor": "description of scoring factor", "impact": "positive" | "negative" | "neutral", "weight": 0-25 }
+  ],
+  "recommendation": "strategic recommendation for sales team",
+  "nextBestAction": "specific next action to take",
+  "conversionProbability": 0-100 (percent chance of conversion),
+  "timeToConvert": "estimated time frame (e.g., '2-4 weeks', '1-3 months')"
+}
+
+Consider: title seniority, company size, industry fit, engagement signals, data completeness. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are an enterprise sales intelligence AI. Provide accurate, actionable lead scoring with business insights. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "predictive_lead_score", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse predictive lead score:", e);
+    }
+    
+    return {
+      score: 50,
+      confidence: "low",
+      factors: [],
+      recommendation: "Insufficient data for analysis",
+      nextBestAction: "Gather more contact information",
+      conversionProbability: 25,
+      timeToConvert: "Unknown",
+    };
+  }
+
+  async generateSalesInsights(contacts: Array<{
+    id: string;
+    fullName?: string;
+    company?: string;
+    industry?: string;
+    title?: string;
+    leadScore?: number;
+    country?: string;
+  }>): Promise<{
+    summary: string;
+    topOpportunities: Array<{ contactId: string; reason: string; priority: string }>;
+    industryBreakdown: Array<{ industry: string; count: number; avgScore: number; insight: string }>;
+    actionItems: Array<{ action: string; priority: string; expectedImpact: string }>;
+    trends: Array<{ trend: string; direction: string; recommendation: string }>;
+  }> {
+    const contactSummary = contacts.slice(0, 50).map(c => 
+      `ID:${c.id} | ${c.fullName || "?"} | ${c.company || "?"} | ${c.industry || "?"} | ${c.title || "?"} | Score:${c.leadScore ?? "?"}`
+    ).join("\n");
+
+    const prompt = `Analyze this CRM contact portfolio for enterprise sales insights:
+
+CONTACTS (${contacts.length} total, showing top 50):
+${contactSummary}
+
+Provide comprehensive sales intelligence in JSON format:
+{
+  "summary": "executive summary of the contact portfolio health and opportunities",
+  "topOpportunities": [
+    { "contactId": "id", "reason": "why this is a top opportunity", "priority": "high" | "medium" | "low" }
+  ],
+  "industryBreakdown": [
+    { "industry": "name", "count": number, "avgScore": number, "insight": "strategic insight" }
+  ],
+  "actionItems": [
+    { "action": "specific action", "priority": "high" | "medium" | "low", "expectedImpact": "expected result" }
+  ],
+  "trends": [
+    { "trend": "observed trend", "direction": "up" | "down" | "stable", "recommendation": "what to do" }
+  ]
+}
+
+Focus on actionable business intelligence. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a sales analytics AI providing executive-level insights. Be strategic, data-driven, and actionable. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "sales_insights", useCache: false }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse sales insights:", e);
+    }
+    
+    return {
+      summary: "Unable to generate insights from provided data",
+      topOpportunities: [],
+      industryBreakdown: [],
+      actionItems: [],
+      trends: [],
+    };
+  }
+
+  async generateEmail(params: {
+    contactName: string;
+    contactTitle?: string;
+    contactCompany?: string;
+    senderName: string;
+    senderCompany?: string;
+    purpose: string;
+    tone: "formal" | "friendly" | "professional" | "casual";
+    context?: string;
+  }): Promise<{
+    subject: string;
+    body: string;
+    callToAction: string;
+    followUpSuggestion: string;
+  }> {
+    const prompt = `Generate a professional sales/business email:
+
+RECIPIENT:
+Name: ${params.contactName}
+Title: ${params.contactTitle || "Professional"}
+Company: ${params.contactCompany || "their company"}
+
+SENDER:
+Name: ${params.senderName}
+Company: ${params.senderCompany || "our company"}
+
+PURPOSE: ${params.purpose}
+TONE: ${params.tone}
+${params.context ? `ADDITIONAL CONTEXT: ${params.context}` : ""}
+
+Generate an email in JSON format:
+{
+  "subject": "compelling email subject line",
+  "body": "full email body with proper greeting and sign-off",
+  "callToAction": "the specific CTA in the email",
+  "followUpSuggestion": "when and how to follow up if no response"
+}
+
+Make it personalized, professional, and likely to get a response. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are an expert sales copywriter. Write emails that are personalized, professional, and effective. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "email_generation", useCache: false }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse email response:", e);
+    }
+    
+    return {
+      subject: "Following Up",
+      body: "Unable to generate email content",
+      callToAction: "Please reply to this email",
+      followUpSuggestion: "Follow up in 3-5 business days",
+    };
+  }
+
+  async analyzeActivityPattern(activities: Array<{
+    type: string;
+    description: string;
+    createdAt: string;
+    contactId?: string;
+    contactName?: string;
+  }>): Promise<{
+    summary: string;
+    patterns: Array<{ pattern: string; frequency: string; significance: string }>;
+    engagementScore: number;
+    recommendations: Array<{ recommendation: string; priority: string; reason: string }>;
+    risksIdentified: Array<{ risk: string; severity: string; mitigation: string }>;
+    opportunitiesIdentified: Array<{ opportunity: string; potential: string; action: string }>;
+  }> {
+    const activityList = activities.slice(0, 100).map(a => 
+      `${a.createdAt} | ${a.type} | ${a.description}${a.contactName ? ` | Contact: ${a.contactName}` : ""}`
+    ).join("\n");
+
+    const prompt = `Analyze these CRM activity patterns for conversation intelligence:
+
+ACTIVITIES (${activities.length} total, showing recent 100):
+${activityList}
+
+Provide activity pattern analysis in JSON format:
+{
+  "summary": "executive summary of activity patterns and health",
+  "patterns": [
+    { "pattern": "identified pattern", "frequency": "how often", "significance": "business impact" }
+  ],
+  "engagementScore": 0-100 (overall engagement health),
+  "recommendations": [
+    { "recommendation": "what to do", "priority": "high" | "medium" | "low", "reason": "why" }
+  ],
+  "risksIdentified": [
+    { "risk": "potential risk", "severity": "high" | "medium" | "low", "mitigation": "how to address" }
+  ],
+  "opportunitiesIdentified": [
+    { "opportunity": "opportunity description", "potential": "high" | "medium" | "low", "action": "recommended action" }
+  ]
+}
+
+Focus on actionable insights. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a CRM analytics expert specializing in activity pattern analysis and conversation intelligence. Provide actionable insights. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "activity_analysis", useCache: false }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse activity analysis:", e);
+    }
+    
+    return {
+      summary: "Insufficient activity data for analysis",
+      patterns: [],
+      engagementScore: 50,
+      recommendations: [],
+      risksIdentified: [],
+      opportunitiesIdentified: [],
+    };
+  }
+
+  async suggestNextActions(contact: {
+    fullName?: string;
+    email?: string;
+    company?: string;
+    title?: string;
+    industry?: string;
+    leadScore?: number;
+    lastActivityDate?: string;
+    activities?: Array<{ type: string; description: string; date: string }>;
+  }): Promise<{
+    immediateActions: Array<{ action: string; reason: string; expectedOutcome: string }>;
+    shortTermActions: Array<{ action: string; timeframe: string; goal: string }>;
+    longTermStrategy: string;
+    warningFlags: Array<{ flag: string; action: string }>;
+  }> {
+    const recentActivities = contact.activities?.slice(0, 5).map(a => 
+      `${a.date}: ${a.type} - ${a.description}`
+    ).join("\n") || "No recent activities";
+
+    const prompt = `Suggest next best actions for this contact:
+
+CONTACT:
+Name: ${contact.fullName || "Unknown"}
+Email: ${contact.email || "Unknown"}
+Company: ${contact.company || "Unknown"}
+Title: ${contact.title || "Unknown"}
+Industry: ${contact.industry || "Unknown"}
+Lead Score: ${contact.leadScore ?? "Not scored"}
+Last Activity: ${contact.lastActivityDate || "Unknown"}
+
+RECENT ACTIVITIES:
+${recentActivities}
+
+Provide strategic next actions in JSON format:
+{
+  "immediateActions": [
+    { "action": "what to do now", "reason": "why", "expectedOutcome": "expected result" }
+  ],
+  "shortTermActions": [
+    { "action": "what to do soon", "timeframe": "when", "goal": "objective" }
+  ],
+  "longTermStrategy": "overall approach for this contact",
+  "warningFlags": [
+    { "flag": "potential issue", "action": "how to address" }
+  ]
+}
+
+Be specific and actionable. Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a sales strategy AI. Provide specific, actionable next steps for contact engagement. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "next_actions", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse next actions:", e);
+    }
+    
+    return {
+      immediateActions: [{ action: "Review contact profile", reason: "Gather context", expectedOutcome: "Better understanding" }],
+      shortTermActions: [],
+      longTermStrategy: "Build relationship through consistent engagement",
+      warningFlags: [],
+    };
+  }
+
+  async analyzeCompanyFit(company: {
+    name?: string;
+    industry?: string;
+    employees?: number;
+    website?: string;
+    annualRevenue?: string;
+    technologies?: string;
+    country?: string;
+  }, idealCustomerProfile?: {
+    targetIndustries?: string[];
+    minEmployees?: number;
+    maxEmployees?: number;
+    targetRevenue?: string;
+    targetCountries?: string[];
+  }): Promise<{
+    fitScore: number;
+    fitLevel: string;
+    strengths: Array<{ strength: string; impact: string }>;
+    concerns: Array<{ concern: string; mitigation: string }>;
+    recommendation: string;
+    competitorRisk: string;
+    expansionPotential: string;
+  }> {
+    const icpDescription = idealCustomerProfile ? 
+      `Target Industries: ${idealCustomerProfile.targetIndustries?.join(", ") || "Any"}
+Employee Range: ${idealCustomerProfile.minEmployees || 0} - ${idealCustomerProfile.maxEmployees || "Any"}
+Target Revenue: ${idealCustomerProfile.targetRevenue || "Any"}
+Target Countries: ${idealCustomerProfile.targetCountries?.join(", ") || "Any"}` :
+      "No specific ICP defined - use general B2B enterprise criteria";
+
+    const prompt = `Analyze company fit for sales targeting:
+
+COMPANY:
+Name: ${company.name || "Unknown"}
+Industry: ${company.industry || "Unknown"}
+Employees: ${company.employees || "Unknown"}
+Website: ${company.website || "Unknown"}
+Annual Revenue: ${company.annualRevenue || "Unknown"}
+Technologies: ${company.technologies || "Unknown"}
+Country: ${company.country || "Unknown"}
+
+IDEAL CUSTOMER PROFILE:
+${icpDescription}
+
+Provide company fit analysis in JSON format:
+{
+  "fitScore": 0-100,
+  "fitLevel": "excellent" | "good" | "moderate" | "poor",
+  "strengths": [
+    { "strength": "positive fit factor", "impact": "high" | "medium" | "low" }
+  ],
+  "concerns": [
+    { "concern": "potential issue", "mitigation": "how to address" }
+  ],
+  "recommendation": "overall strategic recommendation",
+  "competitorRisk": "assessment of competitive landscape risk",
+  "expansionPotential": "growth/upsell potential assessment"
+}
+
+Return valid JSON only.`;
+
+    const response = await this.chat(
+      [
+        { role: "system", content: "You are a B2B sales intelligence AI specializing in company fit analysis. Be thorough and strategic. Always return valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      { operationType: "company_fit_analysis", useCache: true }
+    );
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error("[AI Service] Failed to parse company fit analysis:", e);
+    }
+    
+    return {
+      fitScore: 50,
+      fitLevel: "moderate",
+      strengths: [],
+      concerns: [],
+      recommendation: "Insufficient data for analysis",
+      competitorRisk: "Unknown",
+      expansionPotential: "Unknown",
+    };
+  }
 }
 
 export const aiService = new OpenRouterAIService();

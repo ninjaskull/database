@@ -128,6 +128,10 @@ export interface IStorage {
   // Activity logging
   createContactActivity(activity: InsertContactActivity): Promise<ContactActivity>;
   getContactActivities(contactId: string): Promise<ContactActivity[]>;
+  getAllContactActivities(limit?: number): Promise<ContactActivity[]>;
+  
+  // Company search
+  searchCompanies(query: string, limit?: number): Promise<Company[]>;
   
   // Import jobs
   createImportJob(job: InsertImportJob): Promise<ImportJob>;
@@ -1442,6 +1446,25 @@ export class DatabaseStorage implements IStorage {
       .from(contactActivities)
       .where(eq(contactActivities.contactId, contactId))
       .orderBy(desc(contactActivities.createdAt));
+  }
+
+  async getAllContactActivities(limit: number = 100): Promise<ContactActivity[]> {
+    return await db
+      .select()
+      .from(contactActivities)
+      .orderBy(desc(contactActivities.createdAt))
+      .limit(limit);
+  }
+
+  async searchCompanies(query: string, limit: number = 10): Promise<Company[]> {
+    return await db
+      .select()
+      .from(companies)
+      .where(and(
+        eq(companies.isDeleted, false),
+        ilike(companies.name, `%${query}%`)
+      ))
+      .limit(limit);
   }
 
   async createImportJob(job: InsertImportJob): Promise<ImportJob> {

@@ -43,6 +43,12 @@ router.get("/status", async (_req: Request, res: Response) => {
           "Duplicate Detection",
           "Natural Language Search",
           "Contact Summaries",
+          "Predictive Lead Scoring",
+          "Sales Intelligence",
+          "AI Email Generation",
+          "Activity Pattern Analysis",
+          "Next Best Actions",
+          "Company Fit Analysis",
         ],
       },
     });
@@ -424,6 +430,353 @@ router.post("/cleanup-cache", async (_req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("[AI Routes] Cache cleanup error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// ============ ENTERPRISE AI FEATURES ============
+
+const predictiveScoreSchema = z.object({
+  contactId: z.string(),
+});
+
+router.post("/predictive-score", async (req: Request, res: Response) => {
+  try {
+    const parsed = predictiveScoreSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request body",
+        details: parsed.error.errors,
+      });
+    }
+
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service not configured. Please add OPENROUTER_API_KEY to secrets.",
+      });
+    }
+
+    const contact = await storage.getContact(parsed.data.contactId);
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        error: "Contact not found",
+      });
+    }
+
+    const activities = await storage.getContactActivities(contact.id);
+    const activityData = activities.map(a => ({
+      type: a.activityType,
+      date: a.createdAt?.toISOString() ?? "",
+      description: a.description,
+    }));
+
+    const prediction = await aiService.predictiveLeadScore({
+      fullName: contact.fullName,
+      email: contact.email ?? undefined,
+      company: contact.company ?? undefined,
+      title: contact.title ?? undefined,
+      industry: contact.industry ?? undefined,
+      employees: contact.employees ?? undefined,
+      website: contact.website ?? undefined,
+      city: contact.city ?? undefined,
+      country: contact.country ?? undefined,
+      activities: activityData,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        contactId: contact.id,
+        contactName: contact.fullName,
+        prediction,
+      },
+    });
+  } catch (error) {
+    console.error("[AI Routes] Predictive score error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+router.post("/sales-insights", async (_req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service not configured. Please add OPENROUTER_API_KEY to secrets.",
+      });
+    }
+
+    const result = await storage.getContacts({ limit: 100 });
+    const contacts = result.contacts.map(c => ({
+      id: c.id,
+      fullName: c.fullName,
+      company: c.company ?? undefined,
+      industry: c.industry ?? undefined,
+      title: c.title ?? undefined,
+      leadScore: c.leadScore ? Number(c.leadScore) : undefined,
+      country: c.country ?? undefined,
+    }));
+
+    const insights = await aiService.generateSalesInsights(contacts);
+
+    res.json({
+      success: true,
+      data: {
+        contactsAnalyzed: contacts.length,
+        insights,
+      },
+    });
+  } catch (error) {
+    console.error("[AI Routes] Sales insights error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+const generateEmailSchema = z.object({
+  contactId: z.string(),
+  purpose: z.string().min(1),
+  tone: z.enum(["formal", "friendly", "professional", "casual"]).default("professional"),
+  senderName: z.string().min(1),
+  senderCompany: z.string().optional(),
+  context: z.string().optional(),
+});
+
+router.post("/generate-email", async (req: Request, res: Response) => {
+  try {
+    const parsed = generateEmailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request body",
+        details: parsed.error.errors,
+      });
+    }
+
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service not configured. Please add OPENROUTER_API_KEY to secrets.",
+      });
+    }
+
+    const contact = await storage.getContact(parsed.data.contactId);
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        error: "Contact not found",
+      });
+    }
+
+    const email = await aiService.generateEmail({
+      contactName: contact.fullName,
+      contactTitle: contact.title ?? undefined,
+      contactCompany: contact.company ?? undefined,
+      senderName: parsed.data.senderName,
+      senderCompany: parsed.data.senderCompany,
+      purpose: parsed.data.purpose,
+      tone: parsed.data.tone,
+      context: parsed.data.context,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        contactId: contact.id,
+        email,
+      },
+    });
+  } catch (error) {
+    console.error("[AI Routes] Generate email error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+router.post("/activity-analysis", async (_req: Request, res: Response) => {
+  try {
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service not configured. Please add OPENROUTER_API_KEY to secrets.",
+      });
+    }
+
+    const allActivities = await storage.getAllContactActivities(100);
+    const activitiesForAI = allActivities.map(a => ({
+      type: a.activityType,
+      description: a.description,
+      createdAt: a.createdAt?.toISOString() ?? "",
+      contactId: a.contactId ?? undefined,
+    }));
+
+    const analysis = await aiService.analyzeActivityPattern(activitiesForAI);
+
+    res.json({
+      success: true,
+      data: {
+        activitiesAnalyzed: activitiesForAI.length,
+        analysis,
+      },
+    });
+  } catch (error) {
+    console.error("[AI Routes] Activity analysis error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+const nextActionsSchema = z.object({
+  contactId: z.string(),
+});
+
+router.post("/next-actions", async (req: Request, res: Response) => {
+  try {
+    const parsed = nextActionsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request body",
+        details: parsed.error.errors,
+      });
+    }
+
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service not configured. Please add OPENROUTER_API_KEY to secrets.",
+      });
+    }
+
+    const contact = await storage.getContact(parsed.data.contactId);
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        error: "Contact not found",
+      });
+    }
+
+    const activities = await storage.getContactActivities(contact.id);
+    const lastActivity = activities[0];
+    const activityData = activities.slice(0, 5).map(a => ({
+      type: a.activityType,
+      description: a.description,
+      date: a.createdAt?.toISOString() ?? "",
+    }));
+
+    const actions = await aiService.suggestNextActions({
+      fullName: contact.fullName,
+      email: contact.email ?? undefined,
+      company: contact.company ?? undefined,
+      title: contact.title ?? undefined,
+      industry: contact.industry ?? undefined,
+      leadScore: contact.leadScore ? Number(contact.leadScore) : undefined,
+      lastActivityDate: lastActivity?.createdAt?.toISOString(),
+      activities: activityData,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        contactId: contact.id,
+        contactName: contact.fullName,
+        actions,
+      },
+    });
+  } catch (error) {
+    console.error("[AI Routes] Next actions error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+const companyFitSchema = z.object({
+  companyId: z.string().optional(),
+  companyName: z.string().optional(),
+  targetIndustries: z.array(z.string()).optional(),
+  minEmployees: z.number().optional(),
+  maxEmployees: z.number().optional(),
+});
+
+router.post("/company-fit", async (req: Request, res: Response) => {
+  try {
+    const parsed = companyFitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request body",
+        details: parsed.error.errors,
+      });
+    }
+
+    if (!aiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service not configured. Please add OPENROUTER_API_KEY to secrets.",
+      });
+    }
+
+    let company;
+    if (parsed.data.companyId) {
+      company = await storage.getCompany(parsed.data.companyId);
+    } else if (parsed.data.companyName) {
+      const companies = await storage.searchCompanies(parsed.data.companyName, 1);
+      company = companies[0];
+    }
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        error: "Company not found",
+      });
+    }
+
+    const fitAnalysis = await aiService.analyzeCompanyFit(
+      {
+        name: company.name,
+        industry: company.industry ?? undefined,
+        employees: company.employees ?? undefined,
+        website: company.website ?? undefined,
+        annualRevenue: company.annualRevenue ?? undefined,
+        technologies: company.technologies ?? undefined,
+        country: company.country ?? undefined,
+      },
+      parsed.data.targetIndustries || parsed.data.minEmployees || parsed.data.maxEmployees
+        ? {
+            targetIndustries: parsed.data.targetIndustries,
+            minEmployees: parsed.data.minEmployees,
+            maxEmployees: parsed.data.maxEmployees,
+          }
+        : undefined
+    );
+
+    res.json({
+      success: true,
+      data: {
+        companyId: company.id,
+        companyName: company.name,
+        fitAnalysis,
+      },
+    });
+  } catch (error) {
+    console.error("[AI Routes] Company fit error:", error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
