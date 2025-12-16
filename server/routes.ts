@@ -27,7 +27,13 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   console.log(`📁 Created uploads directory: ${UPLOADS_DIR}`);
 }
 
-const upload = multer({ dest: UPLOADS_DIR });
+const upload = multer({ 
+  dest: UPLOADS_DIR,
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB max file size for large CSV imports (100k+ records)
+    files: 5, // Maximum 5 files per request
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session middleware
@@ -1550,7 +1556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         skipDuplicates: req.body.options ? JSON.parse(req.body.options).skipDuplicates : true,
         updateExisting: req.body.options ? JSON.parse(req.body.options).updateExisting : true,
         autoEnrich: req.body.options ? JSON.parse(req.body.options).autoEnrich : true,
-        batchSize: 100, // Optimized batch size
+        batchSize: 500, // Increased batch size for large imports (100k+ records)
         fieldMapping: req.body.fieldMapping ? JSON.parse(req.body.fieldMapping) : {}
       };
 
@@ -1683,7 +1689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const importOptions = {
         skipDuplicates: options.skipDuplicates !== false,
         updateExisting: options.updateExisting === true,
-        batchSize: 100,
+        batchSize: 500, // Increased batch size for large imports (100k+ records)
         fieldMapping: fieldMapping || {}
       };
 
