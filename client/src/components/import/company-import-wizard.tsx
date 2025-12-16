@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { 
   Upload, 
   FileSpreadsheet, 
@@ -535,6 +535,9 @@ export function CompanyImportWizard({ open, onOpenChange, onImportComplete }: Co
             <Building2 className="h-5 w-5" />
             Import Companies
           </DialogTitle>
+          <DialogDescription>
+            Upload a CSV file to import company data into your database.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-center gap-2 mb-6">

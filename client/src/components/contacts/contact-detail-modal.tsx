@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -66,6 +66,9 @@ export function ContactDetailModal({ contact, isOpen, onClose }: ContactDetailMo
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
+          <DialogDescription className="sr-only">
+            Contact details including overview, activity log, and data enrichment information.
+          </DialogDescription>
           <div className="flex justify-between items-start mb-6">
             <div className="flex items-center">
               <Avatar className="flex-shrink-0 h-16 w-16">

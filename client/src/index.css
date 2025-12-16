@@ -5,48 +5,48 @@
 @tailwind utilities;
 
 :root {
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(210 25% 7.8431%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(210 25% 7.8431%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(210 25% 7.8431%);
-  --primary: hsl(217.2 91.2% 59.8%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(210 40% 98%);
-  --secondary-foreground: hsl(222.2 84% 4.9%);
-  --muted: hsl(210 40% 98%);
-  --muted-foreground: hsl(215.4 16.3% 46.9%);
-  --accent: hsl(210 40% 98%);
-  --accent-foreground: hsl(222.2 84% 4.9%);
-  --destructive: hsl(0 84.2% 60.2%);
-  --destructive-foreground: hsl(210 40% 98%);
-  --border: hsl(214.3 31.8% 91.4%);
-  --input: hsl(214.3 31.8% 91.4%);
-  --ring: hsl(217.2 91.2% 59.8%);
-  --chart-1: hsl(12 76% 61%);
-  --chart-2: hsl(173 58% 39%);
-  --chart-3: hsl(197 37% 24%);
-  --chart-4: hsl(43 74% 66%);
-  --chart-5: hsl(27 87% 67%);
-  --sidebar: hsl(0 0% 100%);
-  --sidebar-foreground: hsl(210 25% 7.8431%);
-  --sidebar-primary: hsl(217.2 91.2% 59.8%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(210 40% 98%);
-  --sidebar-accent-foreground: hsl(222.2 84% 4.9%);
-  --sidebar-border: hsl(214.3 31.8% 91.4%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --background: 0 0% 100%;
+  --foreground: 210 25% 7.8431%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 25% 7.8431%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 210 25% 7.8431%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 98%;
+  --secondary-foreground: 222.2 84% 4.9%;
+  --muted: 210 40% 98%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 98%;
+  --accent-foreground: 222.2 84% 4.9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 217.2 91.2% 59.8%;
+  --chart-1: 12 76% 61%;
+  --chart-2: 173 58% 39%;
+  --chart-3: 197 37% 24%;
+  --chart-4: 43 74% 66%;
+  --chart-5: 27 87% 67%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 210 25% 7.8431%;
+  --sidebar-primary: 217.2 91.2% 59.8%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 210 40% 98%;
+  --sidebar-accent-foreground: 222.2 84% 4.9%;
+  --sidebar-border: 214.3 31.8% 91.4%;
+  --sidebar-ring: 217.2 91.2% 59.8%;
 
   /* IBM Design System Colors */
-  --ibm-blue: hsl(217 91% 50%);
-  --ibm-gray-10: hsl(0 0% 95.7%);
-  --ibm-gray-30: hsl(0 0% 87.8%);
-  --ibm-gray-70: hsl(0 0% 32.2%);
-  --ibm-gray-80: hsl(0 0% 22.4%);
-  --ibm-red: hsl(357 90% 54%);
-  --ibm-green: hsl(142 66% 49%);
-  --ibm-yellow: hsl(49 93% 53%);
+  --ibm-blue: 217 91% 50%;
+  --ibm-gray-10: 0 0% 95.7%;
+  --ibm-gray-30: 0 0% 87.8%;
+  --ibm-gray-70: 0 0% 32.2%;
+  --ibm-gray-80: 0 0% 22.4%;
+  --ibm-red: 357 90% 54%;
+  --ibm-green: 142 66% 49%;
+  --ibm-yellow: 49 93% 53%;
 
   --font-sans: 'IBM Plex Sans', 'Open Sans', sans-serif;
   --font-serif: Georgia, serif;
@@ -55,114 +55,114 @@
 }
 
 .dark {
-  --background: hsl(222.2 84% 4.9%);
-  --foreground: hsl(210 40% 98%);
-  --card: hsl(222.2 84% 4.9%);
-  --card-foreground: hsl(210 40% 98%);
-  --popover: hsl(222.2 84% 4.9%);
-  --popover-foreground: hsl(210 40% 98%);
-  --primary: hsl(217.2 91.2% 59.8%);
-  --primary-foreground: hsl(222.2 47.4% 11.2%);
-  --secondary: hsl(217.2 32.6% 17.5%);
-  --secondary-foreground: hsl(210 40% 98%);
-  --muted: hsl(217.2 32.6% 17.5%);
-  --muted-foreground: hsl(215 20.2% 65.1%);
-  --accent: hsl(217.2 32.6% 17.5%);
-  --accent-foreground: hsl(210 40% 98%);
-  --destructive: hsl(0 62.8% 30.6%);
-  --destructive-foreground: hsl(210 40% 98%);
-  --border: hsl(217.2 32.6% 17.5%);
-  --input: hsl(217.2 32.6% 17.5%);
-  --ring: hsl(217.2 91.2% 59.8%);
-  --chart-1: hsl(220 70% 50%);
-  --chart-2: hsl(160 60% 45%);
-  --chart-3: hsl(30 80% 55%);
-  --chart-4: hsl(280 65% 60%);
-  --chart-5: hsl(340 75% 55%);
-  --sidebar: hsl(222.2 84% 4.9%);
-  --sidebar-foreground: hsl(210 40% 98%);
-  --sidebar-primary: hsl(217.2 91.2% 59.8%);
-  --sidebar-primary-foreground: hsl(222.2 47.4% 11.2%);
-  --sidebar-accent: hsl(217.2 32.6% 17.5%);
-  --sidebar-accent-foreground: hsl(210 40% 98%);
-  --sidebar-border: hsl(217.2 32.6% 17.5%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 217.2 91.2% 59.8%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+  --sidebar: 222.2 84% 4.9%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-primary: 217.2 91.2% 59.8%;
+  --sidebar-primary-foreground: 222.2 47.4% 11.2%;
+  --sidebar-accent: 217.2 32.6% 17.5%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 217.2 32.6% 17.5%;
+  --sidebar-ring: 217.2 91.2% 59.8%;
 }
 
 @layer base {
   * {
-    border-color: var(--border);
+    border-color: hsl(var(--border));
   }
 
   body {
     @apply font-sans antialiased;
-    background-color: var(--background);
-    color: var(--foreground);
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-family: var(--font-sans);
   }
 }
 
 /* Custom IBM Design System utilities */
 .text-ibm-blue {
-  color: var(--ibm-blue);
+  color: hsl(var(--ibm-blue));
 }
 
 .bg-ibm-blue {
-  background-color: var(--ibm-blue);
+  background-color: hsl(var(--ibm-blue));
 }
 
 .text-ibm-gray-10 {
-  color: var(--ibm-gray-10);
+  color: hsl(var(--ibm-gray-10));
 }
 
 .bg-ibm-gray-10 {
-  background-color: var(--ibm-gray-10);
+  background-color: hsl(var(--ibm-gray-10));
 }
 
 .text-ibm-gray-30 {
-  color: var(--ibm-gray-30);
+  color: hsl(var(--ibm-gray-30));
 }
 
 .bg-ibm-gray-30 {
-  background-color: var(--ibm-gray-30);
+  background-color: hsl(var(--ibm-gray-30));
 }
 
 .text-ibm-gray-70 {
-  color: var(--ibm-gray-70);
+  color: hsl(var(--ibm-gray-70));
 }
 
 .bg-ibm-gray-70 {
-  background-color: var(--ibm-gray-70);
+  background-color: hsl(var(--ibm-gray-70));
 }
 
 .text-ibm-gray-80 {
-  color: var(--ibm-gray-80);
+  color: hsl(var(--ibm-gray-80));
 }
 
 .bg-ibm-gray-80 {
-  background-color: var(--ibm-gray-80);
+  background-color: hsl(var(--ibm-gray-80));
 }
 
 .text-ibm-red {
-  color: var(--ibm-red);
+  color: hsl(var(--ibm-red));
 }
 
 .bg-ibm-red {
-  background-color: var(--ibm-red);
+  background-color: hsl(var(--ibm-red));
 }
 
 .text-ibm-green {
-  color: var(--ibm-green);
+  color: hsl(var(--ibm-green));
 }
 
 .bg-ibm-green {
-  background-color: var(--ibm-green);
+  background-color: hsl(var(--ibm-green));
 }
 
 .text-ibm-yellow {
-  color: var(--ibm-yellow);
+  color: hsl(var(--ibm-yellow));
 }
 
 .bg-ibm-yellow {
-  background-color: var(--ibm-yellow);
+  background-color: hsl(var(--ibm-yellow));
 }
