@@ -436,6 +436,10 @@ function showContactResult(contact) {
     contactPhoneBtn.classList.add("hidden");
   }
   
+  if (contact.otherPhone) {
+    fieldsHtml += createFieldHtml("phone", "Phone", contact.otherPhone, `tel:${contact.otherPhone}`);
+  }
+  
   const location = [contact.city, contact.state, contact.country].filter(Boolean).join(", ");
   if (location) {
     fieldsHtml += createFieldHtml("location", "Location", location);
