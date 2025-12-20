@@ -264,14 +264,14 @@ function showContactDetail(contact) {
   const fields = [
     { label: "Name", value: contact.fullName },
     { label: "Email", value: contact.email, copyable: true, link: contact.email ? `mailto:${contact.email}` : null },
-    { label: "Phone", value: contact.mobilePhone, copyable: true },
+    { label: "Mobile", value: contact.mobilePhone, copyable: true, icon: "📱" },
+    { label: "Phone", value: contact.otherPhone, copyable: true, icon: "☎️" },
     { label: "Title", value: contact.title },
     { label: "Company", value: contact.company },
     { label: "Industry", value: contact.industry },
     { label: "Location", value: [contact.city, contact.state, contact.country].filter(Boolean).join(", ") },
-    { label: "LinkedIn", value: contact.personLinkedIn, link: contact.personLinkedIn },
     { label: "Website", value: contact.website, link: contact.website },
-    { label: "Lead Score", value: contact.leadScore },
+    { label: "Lead Score", value: contact.leadScore ? contact.leadScore.toString() : null },
   ];
 
   contactInfo.innerHTML = fields
@@ -279,7 +279,7 @@ function showContactDetail(contact) {
     .map(
       (f) => `
       <div class="info-row">
-        <span class="info-label">${f.label}</span>
+        <span class="info-label">${f.icon ? f.icon + " " : ""}${f.label}</span>
         <span class="info-value">
           ${f.link ? `<a href="${f.link}" target="_blank">${f.value}</a>` : f.value}
           ${f.copyable ? `<button class="copy-btn" data-value="${f.value}" title="Copy">

@@ -143,9 +143,29 @@
     card.id = "prospect-contact-card";
     card.className = "prospect-contact-card";
 
+    const phoneRows = [];
+    if (contact.mobilePhone) {
+      phoneRows.push(`
+        <div class="prospect-card-row">
+          <span class="prospect-card-label">📱 Mobile</span>
+          <span class="prospect-card-value">${contact.mobilePhone}</span>
+          <button class="prospect-copy-btn" data-value="${contact.mobilePhone}">Copy</button>
+        </div>
+      `);
+    }
+    if (contact.otherPhone) {
+      phoneRows.push(`
+        <div class="prospect-card-row">
+          <span class="prospect-card-label">☎️ Phone</span>
+          <span class="prospect-card-value">${contact.otherPhone}</span>
+          <button class="prospect-copy-btn" data-value="${contact.otherPhone}">Copy</button>
+        </div>
+      `);
+    }
+
     card.innerHTML = `
       <div class="prospect-card-header">
-        <h3>Contact Found</h3>
+        <h3>📋 Profile</h3>
         <button id="prospect-card-close" class="prospect-card-close">&times;</button>
       </div>
       <div class="prospect-card-body">
@@ -153,22 +173,28 @@
         <div class="prospect-card-title">${contact.title || ""} ${contact.company ? "at " + contact.company : ""}</div>
         ${contact.email ? `
           <div class="prospect-card-row">
-            <span class="prospect-card-label">Email</span>
+            <span class="prospect-card-label">📧 Email</span>
             <a href="mailto:${contact.email}" class="prospect-card-value">${contact.email}</a>
             <button class="prospect-copy-btn" data-value="${contact.email}">Copy</button>
           </div>
         ` : ""}
-        ${contact.mobilePhone ? `
+        ${phoneRows.join("")}
+        ${contact.company ? `
           <div class="prospect-card-row">
-            <span class="prospect-card-label">Phone</span>
-            <span class="prospect-card-value">${contact.mobilePhone}</span>
-            <button class="prospect-copy-btn" data-value="${contact.mobilePhone}">Copy</button>
+            <span class="prospect-card-label">🏢 Company</span>
+            <span class="prospect-card-value">${contact.company}</span>
           </div>
         ` : ""}
         ${contact.industry ? `
           <div class="prospect-card-row">
-            <span class="prospect-card-label">Industry</span>
+            <span class="prospect-card-label">🏭 Industry</span>
             <span class="prospect-card-value">${contact.industry}</span>
+          </div>
+        ` : ""}
+        ${contact.location ? `
+          <div class="prospect-card-row">
+            <span class="prospect-card-label">📍 Location</span>
+            <span class="prospect-card-value">${contact.location}</span>
           </div>
         ` : ""}
       </div>
