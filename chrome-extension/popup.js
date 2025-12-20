@@ -1,357 +1,673 @@
+const CRM_BASE_URL = "https://crm.fallowl.com";
+
 const loadingView = document.getElementById("loading-view");
-const loginView = document.getElementById("login-view");
+const redirectingView = document.getElementById("redirecting-view");
 const mainView = document.getElementById("main-view");
 
+const userAvatar = document.getElementById("user-avatar");
 const userName = document.getElementById("user-name");
 const planBadge = document.getElementById("plan-badge");
 const usageCount = document.getElementById("usage-count");
 const usageProgress = document.getElementById("usage-progress");
+const autoLookupStatus = document.getElementById("auto-lookup-status");
+
+const linkedinLookupSection = document.getElementById("linkedin-lookup-section");
+const linkedinProfileName = document.getElementById("linkedin-profile-name");
+const lookupBtn = document.getElementById("lookup-btn");
+const autoLookupLoading = document.getElementById("auto-lookup-loading");
+
+const contactResult = document.getElementById("contact-result");
+const contactAvatar = document.getElementById("contact-avatar");
+const contactName = document.getElementById("contact-name");
+const contactTitle = document.getElementById("contact-title");
+const contactCompany = document.getElementById("contact-company");
+const contactFields = document.getElementById("contact-fields");
+const contactEmailBtn = document.getElementById("contact-email-btn");
+const contactPhoneBtn = document.getElementById("contact-phone-btn");
+
+const noProfileSection = document.getElementById("no-profile-section");
+const notFoundSection = document.getElementById("not-found-section");
 
 const searchInput = document.getElementById("search-input");
 const searchBtn = document.getElementById("search-btn");
-const linkedinLookup = document.getElementById("linkedin-lookup");
-const lookupBtn = document.getElementById("lookup-btn");
-
-const resultsSection = document.getElementById("results-section");
 const resultsList = document.getElementById("results-list");
 const contactDetail = document.getElementById("contact-detail");
-const contactInfo = document.getElementById("contact-info");
-const backBtn = document.getElementById("back-btn");
-const noResults = document.getElementById("no-results");
-const noResultsText = document.getElementById("no-results-text");
 const errorMessage = document.getElementById("error-message");
-const errorText = document.getElementById("error-text");
 
-const dashboardUrlInput = document.getElementById("dashboard-url");
-const connectBtn = document.getElementById("connect-btn");
-const openDashboardBtn = document.getElementById("open-dashboard-btn");
 const logoutBtn = document.getElementById("logout-btn");
 
 let currentLinkedInUrl = null;
+let isAutoLooking = false;
 
 async function getStoredAuth() {
   const result = await chrome.storage.local.get(["authToken", "apiBaseUrl"]);
   return {
     token: result.authToken,
-    apiBaseUrl: result.apiBaseUrl || "",
+    apiBaseUrl: result.apiBaseUrl || CRM_BASE_URL,
   };
 }
 
 async function setStoredAuth(token, apiBaseUrl) {
-  await chrome.storage.local.set({ authToken: token, apiBaseUrl: apiBaseUrl });
+  await chrome.storage.local.set({ authToken: token, apiBaseUrl: apiBaseUrl || CRM_BASE_URL });
 }
 
 async function clearStoredAuth() {
-  await chrome.storage.local.remove(["authToken"]);
+  await chrome.storage.local.remove(["authToken", "apiBaseUrl"]);
 }
 
 function showView(viewId) {
   loadingView.classList.add("hidden");
-  loginView.classList.add("hidden");
+  loadingView.classList.remove("fade-in");
+  redirectingView.classList.add("hidden");
+  redirectingView.classList.remove("fade-in");
   mainView.classList.add("hidden");
+  mainView.classList.remove("fade-in");
 
-  if (viewId === "loading") loadingView.classList.remove("hidden");
-  else if (viewId === "login") loginView.classList.remove("hidden");
-  else if (viewId === "main") mainView.classList.remove("hidden");
+  if (viewId === "loading") {
+    loadingView.classList.remove("hidden");
+    loadingView.classList.add("fade-in");
+  } else if (viewId === "redirecting") {
+    redirectingView.classList.remove("hidden");
+    redirectingView.classList.add("fade-in");
+  } else if (viewId === "main") {
+    mainView.classList.remove("hidden");
+    mainView.classList.add("fade-in");
+  }
 }
 
 function showError(message) {
   errorMessage.classList.remove("hidden");
-  errorText.textContent = message;
+  errorMessage.classList.add("shake");
+  errorMessage.textContent = message;
   setTimeout(() => {
-    errorMessage.classList.add("hidden");
+    errorMessage.classList.remove("shake");
+  }, 500);
+  setTimeout(() => {
+    errorMessage.classList.add("fade-out");
+    setTimeout(() => {
+      errorMessage.classList.add("hidden");
+      errorMessage.classList.remove("fade-out");
+    }, 300);
   }, 5000);
 }
 
-function hideAllResults() {
-  resultsSection.classList.add("hidden");
-  contactDetail.classList.add("hidden");
-  noResults.classList.add("hidden");
-  errorMessage.classList.add("hidden");
-}
-
-function updateUsage(used, limit) {
-  if (limit === null || limit === undefined) {
-    usageCount.textContent = "Unlimited";
-    usageProgress.style.width = "100%";
-    usageProgress.style.background = "linear-gradient(90deg, #22c55e, #16a34a)";
-    return;
-  }
-  
-  usageCount.textContent = `${used} / ${limit}`;
-  const percentage = Math.min(100, (used / limit) * 100);
-  usageProgress.style.width = `${percentage}%`;
-
-  if (percentage >= 90) {
-    usageProgress.style.background = "linear-gradient(90deg, #ef4444, #dc2626)";
-  } else if (percentage >= 70) {
-    usageProgress.style.background = "linear-gradient(90deg, #f59e0b, #d97706)";
-  } else {
-    usageProgress.style.background = "linear-gradient(90deg, #3b82f6, #2563eb)";
-  }
+function redirectToAuth() {
+  showView("redirecting");
+  const authUrl = CRM_BASE_URL + "/extension-auth";
+  setTimeout(() => {
+    chrome.tabs.create({ url: authUrl });
+  }, 800);
 }
 
 async function validateSession() {
-  const { token, apiBaseUrl } = await getStoredAuth();
-  
-  if (!token || !apiBaseUrl) {
-    if (apiBaseUrl && dashboardUrlInput) {
-      dashboardUrlInput.value = apiBaseUrl;
-    }
-    showView("login");
-    return null;
-  }
+  showView("loading");
 
   try {
+    const { token, apiBaseUrl } = await getStoredAuth();
+
+    if (!token) {
+      redirectToAuth();
+      return;
+    }
+
     const response = await fetch(`${apiBaseUrl}/api/extension/validate`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     });
+
+    if (response.status === 401) {
+      await clearStoredAuth();
+      redirectToAuth();
+      return;
+    }
 
     const data = await response.json();
 
     if (data.valid) {
-      return data;
+      showView("main");
+      updateUserInfo(data);
+      checkCurrentTab();
+      if (autoLookupStatus) {
+        autoLookupStatus.classList.remove("hidden");
+        autoLookupStatus.classList.add("slide-in");
+      }
     } else {
       await clearStoredAuth();
-      if (dashboardUrlInput) dashboardUrlInput.value = apiBaseUrl;
-      showView("login");
-      return null;
+      redirectToAuth();
     }
   } catch (error) {
     console.error("Validation error:", error);
-    if (dashboardUrlInput) dashboardUrlInput.value = apiBaseUrl;
-    showView("login");
-    return null;
+    redirectToAuth();
   }
 }
 
-async function lookupLinkedIn(url) {
-  const { token, apiBaseUrl } = await getStoredAuth();
-  
-  if (!token || !apiBaseUrl) {
-    showView("login");
-    return;
+function updateUserInfo(data) {
+  if (data.user) {
+    userName.textContent = data.user.name;
+    if (userAvatar) {
+      userAvatar.textContent = data.user.name.charAt(0).toUpperCase();
+    }
   }
-
-  hideAllResults();
-  lookupBtn.disabled = true;
-  lookupBtn.textContent = "Looking up...";
-
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ linkedinUrl: url }),
-    });
-
-    const data = await response.json();
-
-    if (response.status === 401) {
-      await clearStoredAuth();
-      showView("login");
-      return;
-    }
-
-    if (response.status === 403) {
-      showError(data.message || "Lookup limit reached");
-      return;
-    }
-
-    if (data.usage) {
-      if (data.usage.unlimited || data.usage.limit === null) {
-        updateUsage(0, null);
-      } else {
-        updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
-      }
-    }
-
-    if (data.success && data.found) {
-      showContactDetail(data.contact);
-    } else {
-      noResults.classList.remove("hidden");
-      noResultsText.textContent = "No contact found for this LinkedIn profile";
-    }
-  } catch (error) {
-    console.error("Lookup error:", error);
-    showError("Failed to look up profile");
-  } finally {
-    lookupBtn.disabled = false;
-    lookupBtn.textContent = "Look Up Profile";
+  if (data.plan) {
+    planBadge.textContent = data.plan.displayName;
+  }
+  if (data.usage) {
+    const { remaining, limit } = data.usage;
+    usageCount.textContent = `${remaining} / ${limit}`;
+    const percent = Math.max(0, ((limit - remaining) / limit) * 100);
+    usageProgress.style.width = `${percent}%`;
   }
 }
 
-async function searchContacts(query) {
-  const { token, apiBaseUrl } = await getStoredAuth();
-  
-  if (!token || !apiBaseUrl) {
-    showView("login");
-    return;
-  }
-
-  hideAllResults();
-  searchBtn.disabled = true;
-
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/extension/search`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ query, limit: 10 }),
-    });
-
-    const data = await response.json();
-
-    if (response.status === 401) {
-      await clearStoredAuth();
-      showView("login");
-      return;
-    }
-
-    if (response.status === 403) {
-      showError(data.message || "Lookup limit reached");
-      return;
-    }
-
-    if (data.usage) {
-      if (data.usage.unlimited || data.usage.limit === null) {
-        updateUsage(0, null);
-      } else {
-        updateUsage(data.usage.limit - data.usage.remaining, data.usage.limit);
-      }
-    }
-
-    if (data.success && data.contacts && data.contacts.length > 0) {
-      showResults(data.contacts);
-    } else {
-      noResults.classList.remove("hidden");
-      noResultsText.textContent = "No contacts found";
-    }
-  } catch (error) {
-    console.error("Search error:", error);
-    showError("Search failed");
-  } finally {
-    searchBtn.disabled = false;
-  }
+function isProfilePage(url) {
+  return url?.includes("linkedin.com/in/");
 }
 
-function showResults(contacts) {
-  resultsList.innerHTML = "";
-
-  contacts.forEach((contact) => {
-    const item = document.createElement("div");
-    item.className = "result-item";
-    item.innerHTML = `
-      <div class="result-name">${contact.fullName || "Unknown"}</div>
-      <div class="result-meta">${contact.title || ""} ${contact.company ? "at " + contact.company : ""}</div>
-    `;
-    item.addEventListener("click", () => showContactDetail(contact));
-    resultsList.appendChild(item);
-  });
-
-  resultsSection.classList.remove("hidden");
-}
-
-function showContactDetail(contact) {
-  hideAllResults();
-
-  const fields = [
-    { label: "Name", value: contact.fullName },
-    { label: "Email", value: contact.email, copyable: true, link: contact.email ? `mailto:${contact.email}` : null },
-    { label: "Mobile", value: contact.mobilePhone, copyable: true, icon: "📱" },
-    { label: "Phone", value: contact.otherPhone, copyable: true, icon: "☎️" },
-    { label: "Title", value: contact.title },
-    { label: "Company", value: contact.company },
-    { label: "Industry", value: contact.industry },
-    { label: "Location", value: [contact.city, contact.state, contact.country].filter(Boolean).join(", ") },
-    { label: "Website", value: contact.website, link: contact.website },
-    { label: "Lead Score", value: contact.leadScore ? contact.leadScore.toString() : null },
-  ];
-
-  contactInfo.innerHTML = fields
-    .filter((f) => f.value)
-    .map(
-      (f) => `
-      <div class="info-row">
-        <span class="info-label">${f.icon ? f.icon + " " : ""}${f.label}</span>
-        <span class="info-value">
-          ${f.link ? `<a href="${f.link}" target="_blank">${f.value}</a>` : f.value}
-          ${f.copyable ? `<button class="copy-btn" data-value="${f.value}" title="Copy">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-          </button>` : ""}
-        </span>
-      </div>
-    `
-    )
-    .join("");
-
-  contactInfo.querySelectorAll(".copy-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const value = btn.dataset.value;
-      navigator.clipboard.writeText(value);
-      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg>`;
-      setTimeout(() => {
-        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-      }, 1500);
-    });
-  });
-
-  contactDetail.classList.remove("hidden");
+function isSalesNavigatorPage(url) {
+  return url?.includes("linkedin.com/sales/lead/") || url?.includes("linkedin.com/sales/people/");
 }
 
 async function checkCurrentTab() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && tab.url && tab.url.includes("linkedin.com/in/")) {
+    
+    noProfileSection.classList.add("hidden");
+    notFoundSection.classList.add("hidden");
+    contactResult.classList.add("hidden");
+    linkedinLookupSection.classList.add("hidden");
+    autoLookupLoading.classList.add("hidden");
+    
+    if (isProfilePage(tab?.url)) {
       currentLinkedInUrl = tab.url;
-      linkedinLookup.classList.remove("hidden");
+      
+      const profileMatch = tab.url.match(/linkedin\.com\/in\/([^/?]+)/);
+      const profileSlug = profileMatch ? profileMatch[1].replace(/-/g, " ") : "Profile";
+      linkedinProfileName.textContent = formatProfileName(profileSlug);
+      
+      linkedinLookupSection.classList.remove("hidden");
+      linkedinLookupSection.classList.add("slide-in");
+      
+      await performAutoLookup();
+    } else if (isSalesNavigatorPage(tab?.url)) {
+      linkedinProfileName.textContent = "Sales Navigator Profile";
+      linkedinLookupSection.classList.remove("hidden");
+      linkedinLookupSection.classList.add("slide-in");
+      
+      await extractAndLookupSalesNav(tab.id);
     } else {
-      linkedinLookup.classList.add("hidden");
+      currentLinkedInUrl = null;
+      noProfileSection.classList.remove("hidden");
+      noProfileSection.classList.add("fade-in");
     }
   } catch (error) {
     console.error("Tab check error:", error);
   }
 }
 
-async function init() {
-  showView("loading");
-
-  const { apiBaseUrl } = await getStoredAuth();
-  if (apiBaseUrl && dashboardUrlInput) {
-    dashboardUrlInput.value = apiBaseUrl;
-  }
-
-  const sessionData = await validateSession();
-
-  if (sessionData) {
-    userName.textContent = sessionData.user.name || sessionData.user.email;
-    planBadge.textContent = sessionData.plan?.displayName || "Free";
+async function extractAndLookupSalesNav(tabId) {
+  autoLookupLoading.classList.remove("hidden");
+  autoLookupLoading.classList.add("fade-in");
+  linkedinLookupSection.classList.add("hidden");
+  
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const selectors = [
+          'a[href*="linkedin.com/in/"]',
+          '.profile-topcard a[href*="/in/"]',
+          '.artdeco-entity-lockup a[href*="/in/"]',
+          'a[data-control-name="view_linkedin"]'
+        ];
+        
+        for (const selector of selectors) {
+          const links = document.querySelectorAll(selector);
+          for (const link of links) {
+            const href = link.getAttribute('href');
+            if (href && href.includes('/in/')) {
+              const match = href.match(/linkedin\.com\/in\/([^/?]+)/) || href.match(/\/in\/([^/?]+)/);
+              if (match) {
+                return `https://www.linkedin.com/in/${match[1]}/`;
+              }
+            }
+          }
+        }
+        
+        const allLinks = document.querySelectorAll('a[href]');
+        for (const link of allLinks) {
+          const href = link.getAttribute('href') || '';
+          if (href.includes('/in/') && !href.includes('/sales/')) {
+            const match = href.match(/\/in\/([^/?]+)/);
+            if (match && match[1].length > 2) {
+              return `https://www.linkedin.com/in/${match[1]}/`;
+            }
+          }
+        }
+        
+        return null;
+      }
+    });
     
-    if (sessionData.usage?.unlimited || sessionData.usage?.limit === null) {
-      updateUsage(0, null);
+    const publicUrl = results?.[0]?.result;
+    
+    if (publicUrl) {
+      currentLinkedInUrl = publicUrl;
+      const profileMatch = publicUrl.match(/linkedin\.com\/in\/([^/?]+)/);
+      const profileSlug = profileMatch ? profileMatch[1].replace(/-/g, " ") : "Profile";
+      linkedinProfileName.textContent = `${formatProfileName(profileSlug)} (Sales Nav)`;
+      
+      await performAutoLookup();
     } else {
-      updateUsage(sessionData.usage?.used || 0, sessionData.usage?.limit || 0);
+      autoLookupLoading.classList.add("hidden");
+      linkedinLookupSection.classList.remove("hidden");
+      linkedinProfileName.textContent = "Sales Navigator - Click to lookup";
+      showError("Could not extract public profile. Try clicking Lookup.");
     }
-
-    await checkCurrentTab();
-    showView("main");
+  } catch (error) {
+    console.error("Sales Nav extraction error:", error);
+    autoLookupLoading.classList.add("hidden");
+    linkedinLookupSection.classList.remove("hidden");
+    linkedinProfileName.textContent = "Sales Navigator Profile";
   }
 }
+
+function formatProfileName(slug) {
+  return slug
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+async function performAutoLookup() {
+  if (!currentLinkedInUrl || isAutoLooking) return;
+  
+  isAutoLooking = true;
+  
+  linkedinLookupSection.classList.add("hidden");
+  autoLookupLoading.classList.remove("hidden");
+  autoLookupLoading.classList.add("fade-in");
+  
+  try {
+    const { token, apiBaseUrl } = await getStoredAuth();
+
+    const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ linkedinUrl: currentLinkedInUrl }),
+    });
+
+    const data = await response.json();
+
+    autoLookupLoading.classList.add("hidden");
+
+    if (response.status === 401) {
+      await clearStoredAuth();
+      redirectToAuth();
+      return;
+    }
+
+    if (response.status === 403) {
+      showError(data.message || "Daily lookup limit reached");
+      linkedinLookupSection.classList.remove("hidden");
+      isAutoLooking = false;
+      return;
+    }
+
+    if (data.success && data.found) {
+      showContactResult(data.contact);
+      if (data.usage) {
+        updateUserInfo({ usage: data.usage });
+      }
+    } else {
+      notFoundSection.classList.remove("hidden");
+      notFoundSection.classList.add("fade-in");
+    }
+  } catch (error) {
+    console.error("Auto-lookup error:", error);
+    autoLookupLoading.classList.add("hidden");
+    linkedinLookupSection.classList.remove("hidden");
+    showError("Failed to look up profile");
+  }
+  
+  isAutoLooking = false;
+}
+
+async function performManualLookup() {
+  if (!currentLinkedInUrl) return;
+  
+  const btnContent = lookupBtn.querySelector(".btn-lookup-content");
+  const btnLoading = lookupBtn.querySelector(".btn-lookup-loading");
+  
+  lookupBtn.disabled = true;
+  btnContent.classList.add("hidden");
+  btnLoading.classList.remove("hidden");
+
+  try {
+    const { token, apiBaseUrl } = await getStoredAuth();
+
+    const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ linkedinUrl: currentLinkedInUrl }),
+    });
+
+    const data = await response.json();
+
+    if (response.status === 401) {
+      await clearStoredAuth();
+      redirectToAuth();
+      return;
+    }
+
+    if (response.status === 403) {
+      showError(data.message || "Daily lookup limit reached");
+      resetLookupButton();
+      return;
+    }
+
+    if (data.success && data.found) {
+      linkedinLookupSection.classList.add("hidden");
+      showContactResult(data.contact);
+      if (data.usage) {
+        updateUserInfo({ usage: data.usage });
+      }
+    } else {
+      linkedinLookupSection.classList.add("hidden");
+      notFoundSection.classList.remove("hidden");
+      notFoundSection.classList.add("fade-in");
+    }
+  } catch (error) {
+    console.error("Lookup error:", error);
+    showError("Failed to look up profile");
+    resetLookupButton();
+  }
+}
+
+function resetLookupButton() {
+  const btnContent = lookupBtn.querySelector(".btn-lookup-content");
+  const btnLoading = lookupBtn.querySelector(".btn-lookup-loading");
+  
+  lookupBtn.disabled = false;
+  btnContent.classList.remove("hidden");
+  btnLoading.classList.add("hidden");
+}
+
+function showContactResult(contact) {
+  contactResult.classList.remove("hidden");
+  contactResult.classList.add("scale-in");
+  
+  contactAvatar.textContent = contact.fullName.charAt(0).toUpperCase();
+  contactName.textContent = contact.fullName;
+  
+  if (contact.title) {
+    contactTitle.textContent = contact.title;
+    contactTitle.classList.remove("hidden");
+  } else {
+    contactTitle.classList.add("hidden");
+  }
+  
+  if (contact.company) {
+    contactCompany.textContent = contact.company;
+    contactCompany.classList.remove("hidden");
+  } else {
+    contactCompany.classList.add("hidden");
+  }
+  
+  let fieldsHtml = "";
+  
+  if (contact.email) {
+    fieldsHtml += createFieldHtml("email", "Email", contact.email, `mailto:${contact.email}`);
+    contactEmailBtn.href = `mailto:${contact.email}`;
+    contactEmailBtn.classList.remove("hidden");
+  } else {
+    contactEmailBtn.classList.add("hidden");
+  }
+  
+  if (contact.mobilePhone) {
+    fieldsHtml += createFieldHtml("phone", "Mobile", contact.mobilePhone, `tel:${contact.mobilePhone}`);
+    contactPhoneBtn.href = `tel:${contact.mobilePhone}`;
+    contactPhoneBtn.classList.remove("hidden");
+  } else {
+    contactPhoneBtn.classList.add("hidden");
+  }
+  
+  const location = [contact.city, contact.state, contact.country].filter(Boolean).join(", ");
+  if (location) {
+    fieldsHtml += createFieldHtml("location", "Location", location);
+  }
+  
+  if (contact.leadScore) {
+    fieldsHtml += createFieldHtml("score", "Lead Score", contact.leadScore);
+  }
+  
+  contactFields.innerHTML = fieldsHtml;
+  
+  contactFields.querySelectorAll(".field-copy-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const value = btn.dataset.value;
+      navigator.clipboard.writeText(value).then(() => {
+        btn.classList.add("copied");
+        setTimeout(() => btn.classList.remove("copied"), 1500);
+      });
+    });
+  });
+}
+
+function createFieldHtml(type, label, value, link = null) {
+  const icons = {
+    email: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
+    phone: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    location: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    score: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
+  };
+  
+  return `
+    <div class="contact-field slide-in-stagger">
+      <div class="field-icon">${icons[type]}</div>
+      <div class="field-content">
+        <span class="field-label">${label}</span>
+        ${link ? `<a href="${link}" class="field-value">${value}</a>` : `<span class="field-value">${value}</span>`}
+      </div>
+      <button class="field-copy-btn" data-value="${value}" title="Copy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+        <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+async function performSearch(query) {
+  try {
+    const { token, apiBaseUrl } = await getStoredAuth();
+
+    searchBtn.disabled = true;
+    searchBtn.classList.add("searching");
+
+    const response = await fetch(`${apiBaseUrl}/api/extension/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ query }),
+    });
+
+    const data = await response.json();
+
+    if (response.status === 401) {
+      await clearStoredAuth();
+      redirectToAuth();
+      return;
+    }
+
+    searchBtn.disabled = false;
+    searchBtn.classList.remove("searching");
+
+    if (data.success && data.contacts?.length > 0) {
+      showSearchResults(data.contacts);
+    } else {
+      resultsList.innerHTML = `
+        <div class="no-results fade-in">
+          <div class="no-results-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.35-4.35"/>
+            </svg>
+          </div>
+          No contacts found for "${query}"
+        </div>
+      `;
+    }
+  } catch (error) {
+    console.error("Search error:", error);
+    showError("Search failed");
+    searchBtn.disabled = false;
+    searchBtn.classList.remove("searching");
+  }
+}
+
+function showSearchResults(contacts) {
+  contactDetail.classList.add("hidden");
+  resultsList.innerHTML = contacts
+    .map(
+      (contact, index) => `
+    <div class="result-item slide-in-stagger" style="animation-delay: ${index * 50}ms" data-contact='${JSON.stringify(contact).replace(/'/g, "&#39;")}'>
+      <div class="result-avatar">${contact.fullName.charAt(0).toUpperCase()}</div>
+      <div class="result-content">
+        <div class="result-name">${contact.fullName}</div>
+        <div class="result-details">
+          ${contact.title ? `<span class="result-tag">${contact.title}</span>` : ""}
+          ${contact.company ? `<span class="result-tag">${contact.company}</span>` : ""}
+        </div>
+      </div>
+      <svg class="result-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </div>
+  `
+    )
+    .join("");
+
+  resultsList.querySelectorAll(".result-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const contact = JSON.parse(item.dataset.contact);
+      showContactDetail(contact);
+    });
+  });
+}
+
+function showContactDetail(contact) {
+  resultsList.innerHTML = "";
+  contactDetail.classList.remove("hidden");
+  contactDetail.classList.add("scale-in");
+
+  const initial = contact.fullName.charAt(0).toUpperCase();
+  const location = [contact.city, contact.state, contact.country].filter(Boolean).join(", ");
+
+  contactDetail.innerHTML = `
+    <button class="detail-close">&times;</button>
+    <div class="detail-header">
+      <div class="detail-avatar">${initial}</div>
+      <div class="detail-info">
+        <h3>${contact.fullName}</h3>
+        ${contact.title ? `<div class="detail-title">${contact.title}</div>` : ""}
+        ${contact.company ? `<div class="detail-company">${contact.company}</div>` : ""}
+      </div>
+    </div>
+    <div class="detail-fields">
+      ${contact.email ? `
+        <div class="detail-field slide-in-stagger">
+          <div class="detail-field-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+            </svg>
+          </div>
+          <a href="mailto:${contact.email}">${contact.email}</a>
+        </div>
+      ` : ""}
+      ${contact.mobilePhone ? `
+        <div class="detail-field slide-in-stagger">
+          <div class="detail-field-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+          </div>
+          <a href="tel:${contact.mobilePhone}">${contact.mobilePhone}</a>
+        </div>
+      ` : ""}
+      ${location ? `
+        <div class="detail-field slide-in-stagger">
+          <div class="detail-field-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+          </div>
+          <span>${location}</span>
+        </div>
+      ` : ""}
+      ${contact.personLinkedIn ? `
+        <div class="detail-field slide-in-stagger">
+          <div class="detail-field-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
+              <rect x="2" y="9" width="4" height="12"/>
+              <circle cx="4" cy="4" r="2"/>
+            </svg>
+          </div>
+          <a href="${contact.personLinkedIn}" target="_blank">View LinkedIn</a>
+        </div>
+      ` : ""}
+      ${contact.leadScore ? `
+        <div class="detail-field slide-in-stagger">
+          <div class="detail-field-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <span>Lead Score: ${contact.leadScore}</span>
+        </div>
+      ` : ""}
+    </div>
+  `;
+
+  contactDetail.querySelector(".detail-close").addEventListener("click", () => {
+    contactDetail.classList.add("scale-out");
+    setTimeout(() => {
+      contactDetail.classList.add("hidden");
+      contactDetail.classList.remove("scale-out");
+    }, 200);
+  });
+}
+
+logoutBtn.addEventListener("click", async () => {
+  await clearStoredAuth();
+  redirectToAuth();
+});
+
+lookupBtn.addEventListener("click", () => {
+  if (currentLinkedInUrl) {
+    performManualLookup();
+  }
+});
 
 searchBtn.addEventListener("click", () => {
   const query = searchInput.value.trim();
   if (query) {
-    searchContacts(query);
+    performSearch(query);
   }
 });
 
@@ -359,67 +675,17 @@ searchInput.addEventListener("keypress", (e) => {
   if (e.key === "Enter") {
     const query = searchInput.value.trim();
     if (query) {
-      searchContacts(query);
+      performSearch(query);
     }
   }
 });
 
-lookupBtn.addEventListener("click", () => {
-  if (currentLinkedInUrl) {
-    lookupLinkedIn(currentLinkedInUrl);
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "AUTH_SUCCESS") {
+    validateSession();
   }
 });
 
-backBtn.addEventListener("click", () => {
-  hideAllResults();
-});
+const popupPort = chrome.runtime.connect({ name: "popup" });
 
-connectBtn.addEventListener("click", async () => {
-  let url = dashboardUrlInput.value.trim();
-  
-  if (!url) {
-    dashboardUrlInput.focus();
-    return;
-  }
-
-  if (!url.startsWith("http")) {
-    url = "https://" + url;
-  }
-
-  url = url.replace(/\/$/, "");
-
-  await chrome.storage.local.set({ apiBaseUrl: url });
-  
-  const authWindow = window.open(`${url}/extension-auth`, "_blank");
-  
-  const checkInterval = setInterval(async () => {
-    const { authToken } = await chrome.storage.local.get(["authToken"]);
-    if (authToken) {
-      clearInterval(checkInterval);
-      init();
-    }
-  }, 1000);
-  
-  setTimeout(() => clearInterval(checkInterval), 60000);
-});
-
-openDashboardBtn.addEventListener("click", async () => {
-  const { apiBaseUrl } = await getStoredAuth();
-  
-  if (apiBaseUrl) {
-    chrome.tabs.create({ url: apiBaseUrl });
-  }
-});
-
-logoutBtn.addEventListener("click", async () => {
-  await clearStoredAuth();
-  showView("login");
-});
-
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === "local" && (changes.authToken || changes.apiBaseUrl)) {
-    init();
-  }
-});
-
-init();
+validateSession();

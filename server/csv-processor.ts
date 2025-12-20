@@ -360,6 +360,7 @@ export class AdvancedCSVProcessor {
 
   /**
    * Validate and transform batch with Zod schema - optimized for speed
+   * Enhanced with enterprise-level data cleaning and validation
    */
   private validateAndTransformBatch(rawBatch: any[], fieldMapping: Record<string, string>): InsertContact[] {
     const validatedBatch: InsertContact[] = [];
@@ -368,26 +369,48 @@ export class AdvancedCSVProcessor {
       try {
         const contactData: any = {};
 
-        // Apply field mapping
+        // Apply field mapping with data normalization
         Object.entries(rawRecord).forEach(([csvHeader, value]) => {
           const dbField = fieldMapping[csvHeader];
           
           if (dbField && value !== null && value !== undefined && value.toString().trim() !== '') {
-            // Handle special field types
+            // Handle special field types with enterprise-level normalization
             if (dbField === 'technologies') {
               contactData[dbField] = Array.isArray(value) 
                 ? value 
                 : value.toString().split(/[;,|]/).map((t: string) => t.trim()).filter(Boolean);
             } else if (dbField === 'employees') {
               const numValue = parseInt(value.toString().replace(/[^\d]/g, ''));
-              if (!isNaN(numValue)) contactData[dbField] = numValue;
+              if (!isNaN(numValue) && numValue > 0) contactData[dbField] = numValue;
             } else if (dbField === 'annualRevenue' || dbField === 'leadScore') {
               const cleanValue = value.toString().replace(/[^\d.-]/g, '');
               if (cleanValue && !isNaN(parseFloat(cleanValue))) {
                 contactData[dbField] = cleanValue;
               }
+            } else if (dbField === 'email') {
+              // Enterprise email validation and normalization
+              const email = value.toString().trim().toLowerCase();
+              if (this.isValidEmail(email)) {
+                contactData[dbField] = email;
+              }
+            } else if (dbField === 'mobilePhone' || dbField === 'otherPhone' || dbField === 'homePhone' || dbField === 'corporatePhone') {
+              // Normalize phone numbers
+              const phone = this.normalizePhoneNumber(value.toString());
+              if (phone && this.isValidPhoneNumber(phone)) {
+                contactData[dbField] = phone;
+              }
+            } else if (dbField === 'fullName' || dbField === 'firstName' || dbField === 'lastName') {
+              // Clean and normalize names
+              const cleanName = value.toString().trim().replace(/\s+/g, ' ');
+              if (cleanName.length > 0) {
+                contactData[dbField] = cleanName;
+              }
             } else {
-              contactData[dbField] = value.toString().trim();
+              // General text normalization
+              const cleanValue = value.toString().trim().replace(/\s+/g, ' ');
+              if (cleanValue.length > 0) {
+                contactData[dbField] = cleanValue;
+              }
             }
           }
         });
@@ -398,8 +421,9 @@ export class AdvancedCSVProcessor {
         
         if (!hasName && !hasEmail) {
           this.errorAccumulator.push({
-            record: rawRecord,
-            error: 'Missing both name and email'
+            row: rawRecord,
+            error: 'Missing both name and email',
+            severity: 'error'
           });
           continue;
         }
@@ -417,13 +441,37 @@ export class AdvancedCSVProcessor {
 
       } catch (error) {
         this.errorAccumulator.push({
-          record: rawRecord,
-          error: error instanceof Error ? error.message : 'Validation failed'
+          row: rawRecord,
+          error: error instanceof Error ? error.message : 'Validation failed',
+          severity: 'error'
         });
       }
     }
 
     return validatedBatch;
+  }
+
+  /**
+   * Validate email format
+   */
+  private isValidEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email) && email.length <= 254;
+  }
+
+  /**
+   * Normalize phone number (remove special chars, keep digits and +)
+   */
+  private normalizePhoneNumber(phone: string): string {
+    return phone.replace(/[^\d+]/g, '').replace(/\s/g, '');
+  }
+
+  /**
+   * Validate phone number (at least 10 digits)
+   */
+  private isValidPhoneNumber(phone: string): boolean {
+    const digitsOnly = phone.replace(/\D/g, '');
+    return digitsOnly.length >= 10 && digitsOnly.length <= 15;
   }
 
   /**

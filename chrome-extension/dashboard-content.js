@@ -1,4 +1,5 @@
 (function() {
+  const CRM_BASE_URL = "https://crm.fallowl.com";
   const apiBaseUrl = window.location.origin;
 
   function syncAuthToExtension(token) {
@@ -21,7 +22,7 @@
     if (token) {
       const authTime = parseInt(timestamp || "0", 10);
       const now = Date.now();
-      
+
       if (now - authTime < 120000) {
         chrome.runtime.sendMessage({
           type: "STORE_AUTH",
@@ -39,7 +40,7 @@
   function listenForAuthMessages() {
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
-      
+
       if (event.data && event.data.type === "CRM_EXTENSION_AUTH") {
         chrome.runtime.sendMessage({
           type: "STORE_AUTH",
@@ -52,7 +53,7 @@
 
   function syncCurrentSession() {
     const currentToken = localStorage.getItem("authToken");
-    
+
     if (currentToken) {
       chrome.storage.local.get(["authToken", "apiBaseUrl"], (result) => {
         const needsSync = result.authToken !== currentToken || result.apiBaseUrl !== apiBaseUrl;
@@ -65,9 +66,9 @@
 
   checkAndSyncAuth();
   listenForAuthMessages();
-  
+
   setTimeout(syncCurrentSession, 500);
-  
+
   setInterval(() => {
     const currentToken = localStorage.getItem("authToken");
     chrome.storage.local.get(["authToken"], (result) => {
