@@ -16,6 +16,10 @@ import {
   archivedRecords,
   bulkOperationJobs,
   subscriptionPlans,
+  contactPhoneNumbers,
+  contactEmails,
+  contactMerges,
+  duplicateDetections,
   type Contact, 
   type InsertContact,
   type ContactActivity,
@@ -52,6 +56,14 @@ import {
   type BulkProgressEvent,
   type SubscriptionPlan,
   type InsertSubscriptionPlan,
+  type ContactPhoneNumber,
+  type InsertContactPhoneNumber,
+  type ContactEmail,
+  type InsertContactEmail,
+  type ContactMerge,
+  type InsertContactMerge,
+  type DuplicateDetection,
+  type InsertDuplicateDetection,
 } from "@shared/schema";
 import { BatchProcessor, CompanyTemplateCache, formatProgressMessage } from "./batch-processor";
 import { db } from "./db";

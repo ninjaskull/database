@@ -544,6 +544,131 @@ export const aiResponseCache = pgTable("ai_response_cache", {
   index("ai_response_cache_expires_at_idx").on(table.expiresAt),
 ]);
 
+// ============ CONTACT PHONE & EMAIL HISTORY TABLES ============
+
+// Track all phone numbers for a contact (supports multiple phone numbers per contact)
+export const contactPhoneNumbers = pgTable("contact_phone_numbers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id),
+  
+  // Phone details
+  phoneNumber: text("phone_number").notNull(),
+  phoneType: text("phone_type").notNull(), // 'mobile', 'home', 'corporate', 'other'
+  isPrimary: boolean("is_primary").default(false), // Mark the primary phone
+  
+  // Source tracking
+  sourceId: varchar("source_id"), // Reference to original upload/import that added this number
+  sourceType: text("source_type").default("manual"), // 'manual', 'import', 'api', 'enrichment'
+  
+  // Quality & validation
+  isVerified: boolean("is_verified").default(false),
+  verifiedAt: timestamp("verified_at"),
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isDeleted: boolean("is_deleted").default(false),
+}, (table) => [
+  index("contact_phone_numbers_contact_id_idx").on(table.contactId),
+  index("contact_phone_numbers_phone_number_idx").on(table.phoneNumber),
+  index("contact_phone_numbers_phone_type_idx").on(table.phoneType),
+  index("contact_phone_numbers_is_primary_idx").on(table.isPrimary),
+  index("contact_phone_numbers_source_type_idx").on(table.sourceType),
+]);
+
+// Track all emails for a contact (supports multiple emails per contact)
+export const contactEmails = pgTable("contact_emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id),
+  
+  // Email details
+  email: text("email").notNull(),
+  emailType: text("email_type").default("work"), // 'work', 'personal', 'other'
+  isPrimary: boolean("is_primary").default(false), // Mark the primary email
+  
+  // Source tracking
+  sourceId: varchar("source_id"), // Reference to original upload/import that added this email
+  sourceType: text("source_type").default("manual"), // 'manual', 'import', 'api', 'enrichment'
+  
+  // Quality & validation
+  isVerified: boolean("is_verified").default(false),
+  verifiedAt: timestamp("verified_at"),
+  bounceStatus: text("bounce_status"), // 'valid', 'invalid', 'bounced', 'unknown'
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isDeleted: boolean("is_deleted").default(false),
+}, (table) => [
+  index("contact_emails_contact_id_idx").on(table.contactId),
+  index("contact_emails_email_idx").on(table.email),
+  index("contact_emails_email_type_idx").on(table.emailType),
+  index("contact_emails_is_primary_idx").on(table.isPrimary),
+  index("contact_emails_source_type_idx").on(table.sourceType),
+  index("contact_emails_bounce_status_idx").on(table.bounceStatus),
+]);
+
+// Track contact merges (when two contacts are merged into one)
+export const contactMerges = pgTable("contact_merges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // The surviving contact (after merge)
+  primaryContactId: varchar("primary_contact_id").notNull().references(() => contacts.id),
+  
+  // The contact that was merged into primary
+  mergedContactId: varchar("merged_contact_id").notNull().references(() => contacts.id),
+  
+  // Merge strategy
+  mergeStrategy: text("merge_strategy").notNull(), // 'keep_primary', 'keep_merged', 'combined'
+  conflictResolution: jsonb("conflict_resolution"), // How conflicts were resolved for each field
+  
+  // Details of what was merged
+  mergedFields: text("merged_fields").array(), // Which fields were combined/updated
+  mergedPhoneIds: text("merged_phone_ids").array(), // Phone number IDs that were merged
+  mergedEmailIds: text("merged_email_ids").array(), // Email IDs that were merged
+  
+  // Audit
+  mergedBy: varchar("merged_by").references(() => users.id),
+  reason: text("reason"), // Why the merge happened
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("contact_merges_primary_contact_id_idx").on(table.primaryContactId),
+  index("contact_merges_merged_contact_id_idx").on(table.mergedContactId),
+  index("contact_merges_merge_strategy_idx").on(table.mergeStrategy),
+  index("contact_merges_created_at_idx").on(table.createdAt),
+]);
+
+// Track duplicate detection records (for monitoring and review)
+export const duplicateDetections = pgTable("duplicate_detections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // The two contacts identified as duplicates
+  contactId1: varchar("contact_id_1").notNull().references(() => contacts.id),
+  contactId2: varchar("contact_id_2").notNull().references(() => contacts.id),
+  
+  // Detection details
+  detectionType: text("detection_type").notNull(), // 'email_exact', 'phone_exact', 'email_domain', 'fuzzy_name', 'manual'
+  matchingFields: text("matching_fields").array(), // Which fields matched
+  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // 0.00 to 1.00
+  
+  // Status
+  status: text("status").notNull().default("pending"), // 'pending', 'reviewed', 'merged', 'ignored'
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("duplicate_detections_contact_id_1_idx").on(table.contactId1),
+  index("duplicate_detections_contact_id_2_idx").on(table.contactId2),
+  index("duplicate_detections_detection_type_idx").on(table.detectionType),
+  index("duplicate_detections_status_idx").on(table.status),
+  index("duplicate_detections_confidence_score_idx").on(table.confidenceScore),
+  index("duplicate_detections_created_at_idx").on(table.createdAt),
+]);
+
 // Relations
 export const companiesRelations = relations(companies, ({ many }) => ({
   contacts: many(contacts),
@@ -577,6 +702,50 @@ export const contactActivitiesRelations = relations(contactActivities, ({ one })
   contact: one(contacts, {
     fields: [contactActivities.contactId],
     references: [contacts.id],
+  }),
+}));
+
+export const contactPhoneNumbersRelations = relations(contactPhoneNumbers, ({ one }) => ({
+  contact: one(contacts, {
+    fields: [contactPhoneNumbers.contactId],
+    references: [contacts.id],
+  }),
+}));
+
+export const contactEmailsRelations = relations(contactEmails, ({ one }) => ({
+  contact: one(contacts, {
+    fields: [contactEmails.contactId],
+    references: [contacts.id],
+  }),
+}));
+
+export const contactMergesRelations = relations(contactMerges, ({ one }) => ({
+  primaryContact: one(contacts, {
+    fields: [contactMerges.primaryContactId],
+    references: [contacts.id],
+  }),
+  mergedContact: one(contacts, {
+    fields: [contactMerges.mergedContactId],
+    references: [contacts.id],
+  }),
+  mergedByUser: one(users, {
+    fields: [contactMerges.mergedBy],
+    references: [users.id],
+  }),
+}));
+
+export const duplicateDetectionsRelations = relations(duplicateDetections, ({ one }) => ({
+  contact1: one(contacts, {
+    fields: [duplicateDetections.contactId1],
+    references: [contacts.id],
+  }),
+  contact2: one(contacts, {
+    fields: [duplicateDetections.contactId2],
+    references: [contacts.id],
+  }),
+  reviewedByUser: one(users, {
+    fields: [duplicateDetections.reviewedBy],
+    references: [users.id],
   }),
 }));
 
@@ -718,6 +887,33 @@ export const insertAiResponseCacheSchema = createInsertSchema(aiResponseCache).o
   updatedAt: true,
 });
 
+// Contact phone & email history schemas
+export const insertContactPhoneNumberSchema = createInsertSchema(contactPhoneNumbers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  verifiedAt: true,
+});
+
+export const insertContactEmailSchema = createInsertSchema(contactEmails).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  verifiedAt: true,
+});
+
+export const insertContactMergeSchema = createInsertSchema(contactMerges).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDuplicateDetectionSchema = createInsertSchema(duplicateDetections).omit({
+  id: true,
+  createdAt: true,
+  reviewedAt: true,
+});
+
 // LinkedIn enrichment request schema
 export const linkedinEnrichmentRequestSchema = z.object({
   linkedinUrl: z.string().url("Invalid LinkedIn URL").refine(
@@ -779,6 +975,16 @@ export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
 export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
 export type AiResponseCache = typeof aiResponseCache.$inferSelect;
 export type InsertAiResponseCache = z.infer<typeof insertAiResponseCacheSchema>;
+
+// Contact phone & email history types
+export type ContactPhoneNumber = typeof contactPhoneNumbers.$inferSelect;
+export type InsertContactPhoneNumber = z.infer<typeof insertContactPhoneNumberSchema>;
+export type ContactEmail = typeof contactEmails.$inferSelect;
+export type InsertContactEmail = z.infer<typeof insertContactEmailSchema>;
+export type ContactMerge = typeof contactMerges.$inferSelect;
+export type InsertContactMerge = z.infer<typeof insertContactMergeSchema>;
+export type DuplicateDetection = typeof duplicateDetections.$inferSelect;
+export type InsertDuplicateDetection = z.infer<typeof insertDuplicateDetectionSchema>;
 
 // Bulk operation progress event types
 export interface BulkProgressEvent {
