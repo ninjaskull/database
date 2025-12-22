@@ -1067,6 +1067,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Find duplicate contacts for a given contact
+  app.get("/api/contacts/:id/duplicates", requireAuth, async (req, res) => {
+    try {
+      const contact = await storage.getContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ message: "Contact not found" });
+      }
+
+      // Find duplicates using fuzzy matching
+      const fuzzyDuplicates = await storage.findFuzzyDuplicateContacts(
+        contact.email || undefined,
+        contact.fullName || undefined,
+        contact.company || undefined
+      );
+
+      // Filter out the contact itself
+      const duplicates = fuzzyDuplicates.filter(d => d.id !== contact.id);
+
+      res.json({
+        sourceContact: contact,
+        duplicates,
+        count: duplicates.length,
+      });
+    } catch (error) {
+      console.error('Find duplicates error:', error);
+      res.status(500).json({ message: "Failed to find duplicates" });
+    }
+  });
+
+  // Merge two contacts
+  app.post("/api/contacts/:id/merge", requireAuth, async (req, res) => {
+    try {
+      const { secondaryContactId, mergeStrategy = 'combined' } = req.body;
+
+      if (!secondaryContactId) {
+        return res.status(400).json({ message: "secondaryContactId is required" });
+      }
+
+      // Validate merge strategy
+      if (!['keep_primary', 'keep_secondary', 'combined'].includes(mergeStrategy)) {
+        return res.status(400).json({ message: "Invalid merge strategy" });
+      }
+
+      const mergedContact = await storage.mergeContacts(
+        req.params.id,
+        secondaryContactId,
+        mergeStrategy
+      );
+
+      res.json({
+        message: "Contacts merged successfully",
+        mergedContact,
+      });
+    } catch (error) {
+      console.error('Merge contacts error:', error);
+      res.status(500).json({ 
+        message: "Failed to merge contacts",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Get contact stats  
   app.get("/api/stats", requireAuth, async (req, res) => {
     try {
