@@ -1027,17 +1027,20 @@ export class DatabaseStorage implements IStorage {
     const conditions = [eq(contacts.isDeleted, false)];
     
     if (email) {
-      conditions.push(eq(contacts.email, email));
+      // Smart matching: exact email match first
+      conditions.push(eq(contacts.email, email.toLowerCase().trim()));
     }
     
     if (company) {
       conditions.push(eq(contacts.company, company));
     }
     
-    return await db
+    const results = await db
       .select()
       .from(contacts)
       .where(and(...conditions));
+    
+    return results;
   }
 
   async findFuzzyDuplicateContacts(
@@ -1049,7 +1052,7 @@ export class DatabaseStorage implements IStorage {
     
     // Exact email match is highest priority
     if (email) {
-      conditions.push(eq(contacts.email, email));
+      conditions.push(eq(contacts.email, email.toLowerCase().trim()));
       return await db
         .select()
         .from(contacts)
@@ -1060,7 +1063,7 @@ export class DatabaseStorage implements IStorage {
     if (fullName && company) {
       const nameWords = fullName.toLowerCase().split(' ').filter(w => w.length > 1);
       if (nameWords.length >= 2) {
-        // Use SQL LIKE for fuzzy matching
+        // Use SQL LIKE for fuzzy matching - first and last words
         conditions.push(
           sql`LOWER(${contacts.fullName}) LIKE ${`%${nameWords[0]}%`} AND LOWER(${contacts.fullName}) LIKE ${`%${nameWords[nameWords.length - 1]}%`}`
         );
@@ -1070,6 +1073,27 @@ export class DatabaseStorage implements IStorage {
           .select()
           .from(contacts)
           .where(and(...conditions));
+      }
+    }
+    
+    // Extended fuzzy search if basic fuzzy fails
+    if (fullName) {
+      const baseConditions = [eq(contacts.isDeleted, false)];
+      const words = fullName.toLowerCase().split(' ').filter(w => w.length > 1);
+      
+      if (words.length > 0) {
+        // Search for contacts containing any of the name words
+        baseConditions.push(
+          sql`LOWER(${contacts.fullName}) LIKE ${`%${words[0]}%`}`
+        );
+        
+        const fuzzyResults = await db
+          .select()
+          .from(contacts)
+          .where(and(...baseConditions))
+          .limit(10);
+        
+        return fuzzyResults;
       }
     }
     
