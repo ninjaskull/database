@@ -123,6 +123,9 @@ export interface IStorage {
   findDuplicateContacts(email: string, company?: string): Promise<Contact[]>;
   findFuzzyDuplicateContacts(email?: string, fullName?: string, company?: string): Promise<Contact[]>;
   
+  // Contact merging
+  mergeContacts(primaryContactId: string, secondaryContactId: string, mergeStrategy?: 'keep_primary' | 'keep_secondary' | 'combined'): Promise<Contact>;
+  
   // Stats
   getContactStats(): Promise<{
     totalContacts: number;
@@ -1098,6 +1101,134 @@ export class DatabaseStorage implements IStorage {
     }
     
     return [];
+  }
+
+  /**
+   * Intelligently merge two contacts while preserving all phone/email details
+   */
+  async mergeContacts(
+    primaryContactId: string, 
+    secondaryContactId: string, 
+    mergeStrategy: 'keep_primary' | 'keep_secondary' | 'combined' = 'combined'
+  ): Promise<Contact> {
+    const primary = await this.getContact(primaryContactId);
+    const secondary = await this.getContact(secondaryContactId);
+
+    if (!primary || !secondary) {
+      throw new Error('One or both contacts not found');
+    }
+
+    const conflictResolution: Record<string, { primary: any; secondary: any; chosen: any }> = {};
+    const mergedData: Partial<InsertContact> = {};
+
+    // Intelligently merge each field
+    const fieldMappings = [
+      'fullName', 'firstName', 'lastName', 'title', 'email',
+      'company', 'industry', 'employeeSizeBracket', 'country',
+      'city', 'state', 'website', 'employees', 'annualRevenue',
+      'leadScore', 'region', 'businessType'
+    ];
+
+    for (const field of fieldMappings) {
+      const primaryVal = (primary as any)[field];
+      const secondaryVal = (secondary as any)[field];
+
+      if (!primaryVal && secondaryVal) {
+        // Secondary has value, primary doesn't
+        mergedData[field as keyof Partial<InsertContact>] = secondaryVal;
+        conflictResolution[field] = { primary: null, secondary: secondaryVal, chosen: secondaryVal };
+      } else if (primaryVal && !secondaryVal) {
+        // Primary has value, secondary doesn't - keep primary
+        mergedData[field as keyof Partial<InsertContact>] = primaryVal;
+        conflictResolution[field] = { primary: primaryVal, secondary: null, chosen: primaryVal };
+      } else if (primaryVal && secondaryVal && primaryVal !== secondaryVal) {
+        // Both have different values - use merge strategy
+        let chosenVal = primaryVal;
+        
+        if (mergeStrategy === 'keep_secondary') {
+          chosenVal = secondaryVal;
+        } else if (mergeStrategy === 'combined') {
+          // For certain fields, prefer non-empty values
+          if (field === 'leadScore' && secondaryVal) {
+            chosenVal = Math.max(Number(primaryVal) || 0, Number(secondaryVal) || 0);
+          }
+        }
+        
+        mergedData[field as keyof Partial<InsertContact>] = chosenVal;
+        conflictResolution[field] = { primary: primaryVal, secondary: secondaryVal, chosen: chosenVal };
+      }
+    }
+
+    // Update primary contact with merged data
+    const updatedPrimary = await db
+      .update(contacts)
+      .set({
+        ...mergedData,
+        updatedAt: new Date(),
+      })
+      .where(eq(contacts.id, primaryContactId))
+      .returning();
+
+    const mergedContact = updatedPrimary[0];
+
+    // Move phone numbers from secondary to primary (if not duplicates)
+    const secondaryPhones = [
+      secondary.mobilePhone,
+      secondary.otherPhone,
+      secondary.homePhone,
+      secondary.corporatePhone,
+    ].filter(p => p);
+
+    const primaryPhones = [
+      primary.mobilePhone,
+      primary.otherPhone,
+      primary.homePhone,
+      primary.corporatePhone,
+    ].filter(p => p);
+
+    // Copy unique phone numbers
+    const phoneMapping: Record<string, string> = {};
+    for (const phone of secondaryPhones) {
+      const phoneStr = phone || '';
+      if (!primaryPhones.includes(phoneStr) && !Object.keys(phoneMapping).includes(phoneStr)) {
+        if (!primary.mobilePhone) {
+          mergedContact.mobilePhone = phoneStr;
+        } else if (!primary.otherPhone) {
+          mergedContact.otherPhone = phoneStr;
+        } else if (!primary.homePhone) {
+          mergedContact.homePhone = phoneStr;
+        } else if (!primary.corporatePhone) {
+          mergedContact.corporatePhone = phoneStr;
+        }
+        phoneMapping[phoneStr] = phoneStr;
+      }
+    }
+
+    // Record the merge
+    await db.insert(contactMerges).values({
+      primaryContactId,
+      mergedContactId: secondaryContactId,
+      mergeStrategy,
+      conflictResolution: conflictResolution,
+      mergedFields: Object.keys(mergedData),
+      reason: 'Automatic duplicate merge',
+    } as any);
+
+    // Mark secondary contact as deleted
+    await db
+      .update(contacts)
+      .set({ isDeleted: true })
+      .where(eq(contacts.id, secondaryContactId));
+
+    // Log the merge activity
+    await this.createContactActivity({
+      contactId: primaryContactId,
+      activityType: 'merged',
+      description: `Merged contact ${secondary.fullName} (${secondaryContactId}) into this contact`,
+      changes: conflictResolution,
+    });
+
+    return mergedContact;
   }
 
   async getContactStats() {
