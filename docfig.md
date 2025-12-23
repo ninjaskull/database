@@ -145,138 +145,175 @@ This document illustrates the behavior of the LinkedOut Chrome extension when us
 
 ---
 
-## 2. Sales Navigator URL Flow
+## 2. Sales Navigator Lead URL Flow (Updated Implementation)
 
-### User Journey: Opening a Sales Navigator Profile (salesnavigator.linkedin.com/...)
+### User Journey: Opening a Sales Navigator Lead Profile (linkedin.com/sales/lead/...)
+
+**Key Change:** The new implementation uses direct URL detection instead of DOM scraping, making it more reliable and faster.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│    USER OPENS SALES NAVIGATOR PROFILE PAGE                   │
-│    (e.g., salesnavigator.linkedin.com/profile/...)          │
+│    USER OPENS SALES NAVIGATOR LEAD PAGE                      │
+│    (e.g., linkedin.com/sales/lead/123456789/)                │
 └─────────────────────────┬──────────────────────────────────┘
                           │
                           ▼
         ┌──────────────────────────────────────────┐
         │ Extension Content Script Activates       │
-        │ - Detects Sales Navigator URL            │
-        │ - Checks for public LinkedIn profile     │
-        │   link (may be hidden/not visible)       │
-        │ - Checks for auth token                  │
+        │ - Detects /sales/lead/ URL pattern      │
+        │ - Extracts current tab URL              │
+        │ - Notifies background script            │
+        │ - Checks for auth token                 │
         └───────────────┬──────────────────────────┘
                         │
                         ▼
         ┌──────────────────────────────────┐
-        │ Is Public LinkedIn URL Found?    │
-        │ (Extracted from page DOM)        │
+        │ Background Script Updates Badge  │
+        │ - Sets badge text: "S"           │
+        │ - Sets badge color: Amber        │
+        │ (indicates Sales Navigator page) │
+        └───────────────┬──────────────────┘
+                        │
+                        ▼
+        ┌──────────────────────────────────┐
+        │ Is User Authenticated?           │
+        │ (Auth token in chrome.storage)   │
         └────┬──────────────────────────┬──┘
              │ NO                       │ YES
              │                          │
              ▼                          ▼
-    ┌──────────────────────┐  ┌──────────────────────┐
-    │ Show Warning         │  │ Proceed with        │
-    │ "Waiting for page... │  │ LinkedIn URL        │
-    │ Could not find       │  │ (same as regular    │
-    │ public profile"      │  │ profile flow)       │
-    │                      │  │                     │
-    │ [Continue to button] │  │ Display Sales Nav   │
-    │ or [Retry]           │  │ Indicator           │
-    └──────────────────────┘  │ "Sales Navigator"   │
-                              │                     │
-                              │ Button:             │
-                              │ "Look Up"           │
-                              └──────────┬──────────┘
-                                         │
-                                         │ User clicks "Look Up"
-                                         ▼
-                        ┌──────────────────────────────┐
-                        │ Extract Public LinkedIn URL  │
-                        │ from Sales Navigator DOM     │
-                        └────────────┬─────────────────┘
-                                     │
-                                     ▼
-                        ┌──────────────────────────────┐
-                        │ Send Lookup Request          │
-                        │ POST /api/extension/lookup   │
-                        │ - Extracted LinkedIn URL     │
-                        │   (from Sales Nav page)      │
-                        │ - Authorization token       │
-                        └───────────┬──────────────────┘
-                                    │
-                     ┌──────────────┴──────────────┐
-                     │ Check Usage Limits          │
-                     │ (Plan-based daily lookups)  │
-                     └──────┬────────────┬─────────┘
-                            │            │
-               ┌────────────┘            └──────────────┐
-               │ LIMIT EXCEEDED                        │ WITHIN LIMIT
-               ▼                                       ▼
-       ┌───────────────┐            ┌──────────────────────────┐
-       │ Return 403    │            │ Search Database by       │
-       │ Error         │            │ Public LinkedIn URL      │
-       │ "Limit reached"           │ Query: findContactBy     │
-       └───────────────┘            │ LinkedInUrl()            │
-                                    └──────────┬───────────────┘
-                                              │
-                                ┌─────────────┴──────────────┐
-                                │ PROFILE FOUND?             │
-                                └──────┬─────────────────┬───┘
-                                 YES   │                 │   NO
-                                       │                 │
-                                       ▼                 ▼
-                        ┌──────────────────────┐  ┌──────────────────┐
-                        │ SALES NAV CARD:      │  │ SALES NAV CARD:  │
-                        │ (with indicator tag) │  │ NOT FOUND        │
-                        │                      │  │ (with indicator) │
-                        │ - Full Name          │  │                  │
-                        │ - Title @ Company    │  │ - Extracted Name │
-                        │ - Email              │  │ - Sales Nav tag  │
-                        │ - Phone              │  │ - LinkedIn URL   │
-                        │ - Location           │  │   (public link)  │
-                        │ - Lead Score         │  │                  │
-                        │ - LinkedIn URL       │  │ Action Button:   │
-                        │ - SALES NAV BADGE    │  │ "Sync CRM"       │
-                        │                      │  │ (ENABLED)        │
-                        │ Action Buttons:      │  │                  │
-                        │ - Email              │  │ "Save to CRM"    │
-                        │ - "Sync CRM"         │  │ message          │
-                        │   (DISABLED)         │  │                  │
-                        │   Tooltip:           │  └──────────┬───────┘
-                        │   "Profile already   │             │
-                        │    in CRM"           │             │
-                        └──────────────────────┘             │
-                                                            │ User clicks "Sync CRM"
-                                                            ▼
-                                              ┌──────────────────────┐
-                                              │ POST /api/extension/ │
-                                              │ save-profile         │
-                                              │                      │
-                                              │ Body:                │
-                                              │ {                    │
-                                              │   linkedinUrl:       │
-                                              │   (public URL),       │
-                                              │   fullName: "...",    │
-                                              │   title: "...",       │
-                                              │   company: "...",     │
-                                              │   email: "..."        │
-                                              │ }                     │
-                                              └──────────┬───────────┘
-                                                         │
-                                           ┌─────────────▼──────────┐
-                                           │ Create Contact in DB   │
-                                           │ INSERT prospect        │
-                                           │ with LinkedIn URL      │
-                                           │ from Sales Navigator   │
-                                           └──────────┬──────────────┘
-                                                      │
-                                                      ▼
-                                            ┌──────────────────────┐
-                                            │ Show Success Message │
-                                            │ "Contact saved       │
-                                            │ to CRM!"             │
-                                            │                      │
-                                            │ Button: "✓ Saved"    │
-                                            └──────────────────────┘
+    ┌─────────────────┐        ┌──────────────────────┐
+    │ Show Login CTA  │        │ Show Popup with:     │
+    │ "Sign in to use"│        │ - "Sales Navigator"  │
+    │                 │        │   label              │
+    │ Redirect to     │        │ - "Look Up" Button   │
+    │ /extension-auth │        │ - Loading state      │
+    └─────────────────┘        └──────────┬───────────┘
+                                          │
+                        ┌─────────────────┘ (Auto-lookup or manual click)
+                        │
+                        ▼
+                ┌──────────────────────────────────┐
+                │ Auto-Lookup Triggered (Optional) │
+                │ or Manual Lookup on Button Click │
+                │                                  │
+                │ Extract URLs:                    │
+                │ - salesNavigatorUrl:             │
+                │   linkedin.com/sales/lead/...    │
+                │ - linkedinUrl: null (or extracted│
+                │   if available on page)          │
+                └────────────┬─────────────────────┘
+                             │
+                             ▼
+                ┌──────────────────────────────────┐
+                │ Send Lookup Request to Backend   │
+                │ POST /api/extension/lookup       │
+                │ {                                │
+                │   salesNavigatorUrl: "https://..│
+                │   linkedinUrl: (optional)        │
+                │ }                                │
+                └────────────┬─────────────────────┘
+                             │
+                  ┌──────────┴──────────┐
+                  │ Check Usage Limits  │
+                  │ (Plan-based daily)  │
+                  └──────┬────────┬─────┘
+                         │        │
+            ┌────────────┘        └──────────────┐
+            │ LIMIT EXCEEDED                    │ WITHIN LIMIT
+            ▼                                   ▼
+    ┌───────────────┐      ┌──────────────────────────┐
+    │ Return 403    │      │ Search Database using    │
+    │ Error         │      │ findContactByLinkedInUrls│
+    │ "Limit        │      │ (flexible matching)      │
+    │  reached"     │      │ - Try salesNavigatorUrl  │
+    └───────────────┘      │ - OR try linkedinUrl     │
+                           └──────────┬───────────────┘
+                                      │
+                           ┌──────────┴──────────┐
+                           │ CONTACT FOUND?      │
+                           └──────┬──────────┬───┘
+                            YES   │          │   NO
+                                  │          │
+                                  ▼          ▼
+                    ┌────────────────────┐  ┌────────────────┐
+                    │ DISPLAY CONTACT    │  │ DISPLAY NEW    │
+                    │ FOUND CARD         │  │ CONTACT CARD   │
+                    │                    │  │ (NOT FOUND)    │
+                    │ - Full Name        │  │                │
+                    │ - Title @ Company  │  │ - Name         │
+                    │ - Email            │  │ - Sales Nav    │
+                    │ - Phone            │  │   URL          │
+                    │ - Location         │  │ - Linked In    │
+                    │ - Lead Score       │  │   URL (if any) │
+                    │ - LinkedIn Profile │  │                │
+                    │   URL (link)       │  │ Action Button: │
+                    │ - Sales Navigator  │  │ "Save" (ENABLED)
+                    │   URL (link) ★     │  │                │
+                    │                    │  │ Message:       │
+                    │ Action Buttons:    │  │ "Save to CRM"  │
+                    │ - Email            │  │                │
+                    │ - "Look Up" button │  └────────┬───────┘
+                    │   (DISABLED -      │           │
+                    │    already saved)  │           │ User clicks "Save"
+                    │                    │           │
+                    └────────────────────┘           ▼
+                                        ┌────────────────────────┐
+                                        │ POST /api/extension/   │
+                                        │ save-profile           │
+                                        │                        │
+                                        │ Body:                  │
+                                        │ {                      │
+                                        │   salesNavigatorUrl:   │
+                                        │   "linkedin.com/sales/"│
+                                        │   linkedinUrl:         │
+                                        │   (optional),          │
+                                        │   fullName: "...",     │
+                                        │   title: "...",        │
+                                        │   company: "...",      │
+                                        │   email: "..."         │
+                                        │ }                      │
+                                        └────────────┬───────────┘
+                                                     │
+                                      ┌──────────────▼──────────┐
+                                      │ Check if URL exists     │
+                                      │ (by either URL type)    │
+                                      └──────┬───────────┬──────┘
+                                             │           │
+                                  ┌──────────┘           │
+                                  │ ALREADY EXISTS       │ NEW
+                                  ▼                      ▼
+                              ┌────────┐      ┌──────────────────┐
+                              │ Error: │      │ Create Contact   │
+                              │ Duplicate│     │ INSERT prospect  │
+                              │ saved" │      │ with BOTH URLs:  │
+                              └────────┘      │ - personLinkedIn │
+                                             │ - salesNavigatorUrl
+                                             │                  │
+                                             │ Return:          │
+                                             │ {                │
+                                             │   success: true, │
+                                             │   contact: {...} │
+                                             │ }                │
+                                             └──────────┬───────┘
+                                                        │
+                                                        ▼
+                                              ┌──────────────────┐
+                                              │ Show Success     │
+                                              │ Message:         │
+                                              │ "Contact saved   │
+                                              │ to CRM!"         │
+                                              │                  │
+                                              │ Button: "✓ Saved"│
+                                              └──────────────────┘
 ```
+
+**Key Improvements (★):**
+- Direct URL detection (no DOM scraping needed)
+- Both URL types stored and displayed
+- Flexible backend matching (OR logic)
+- Badge shows "S" for Sales Navigator pages
+- Faster, more reliable execution
 
 ---
 
@@ -284,13 +321,149 @@ This document illustrates the behavior of the LinkedOut Chrome extension when us
 
 | Scenario | Regular LinkedIn | Sales Navigator | Outcome |
 |----------|------------------|-----------------|---------|
-| **User Opens Profile** | linkedin.com/in/... | salesnavigator.linkedin.com/... | Extension activates |
-| **URL Extraction** | Direct from page URL | Must find public LinkedIn link from DOM | Different extraction method |
-| **Visual Indicator** | None | "Sales Navigator" badge shown | Helps user identify source |
-| **Profile Lookup** | Uses direct LinkedIn URL | Uses extracted public LinkedIn URL | Same lookup endpoint, different URL source |
+| **User Opens Profile** | linkedin.com/in/... | linkedin.com/sales/lead/... | Extension activates |
+| **URL Detection** | Direct from page URL (/in/) | Direct from page URL (/sales/lead/) | Both use pattern matching |
+| **URL Extraction Method** | Current tab URL | Current tab URL | No DOM scraping needed |
+| **Visual Indicator** | Badge: "!" (blue) | Badge: "S" (amber) | User identifies page type |
+| **Profile Lookup** | Uses LinkedIn URL | Uses Sales Navigator URL + optional LinkedIn URL | Flexible backend matching (OR logic) |
+| **Database Search** | Query: personLinkedIn | Query: salesNavigatorUrl OR personLinkedIn | Unified method: findContactByLinkedInUrls() |
 | **Found in CRM** | Shows contact + disabled button | Shows contact + disabled button | User can't save (already exists) |
 | **Not in CRM** | Shows new contact + enabled button | Shows new contact + enabled button | User can save to CRM |
-| **Save to CRM** | Stores LinkedIn URL | Stores public LinkedIn URL | Both save successfully |
+| **Save to CRM** | Stores: personLinkedIn | Stores: BOTH URLs (personLinkedIn + salesNavigatorUrl) | Dual URL tracking for future lookups |
+| **Contact Display** | Shows LinkedIn URL link | Shows LinkedIn URL + Sales Nav URL (both clickable) | Complete URL references |
+
+---
+
+## 3.5 Chrome Extension Architecture Overview
+
+### Core Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              CHROME EXTENSION ARCHITECTURE                  │
+└─────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  manifest.json                                           │
+│  ─────────────────────────────────────────────────────── │
+│  - Manifest v3 (latest Chrome standard)                  │
+│  - Permissions: storage, activeTab, scripting            │
+│  - Host permissions: *.linkedin.com, *.replit.dev, etc.  │
+│  - Background service worker: background.js             │
+│  - Content scripts for LinkedIn & Dashboard              │
+│  - Popup UI: popup.html, popup.js, popup.css             │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  Content Script (content.js)                             │
+│  ─────────────────────────────────────────────────────── │
+│  Injected on all LinkedIn pages                          │
+│  ✅ Detects profile type (/in/ vs /sales/lead/)          │
+│  ✅ Extracts current tab URL                             │
+│  ✅ Notifies background script of page type              │
+│  ✅ Injects "Look Up" button on profiles                 │
+│  ✅ Handles lookup button clicks                         │
+│  ✅ Communicates with backend API                        │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  Background Service Worker (background.js)               │
+│  ─────────────────────────────────────────────────────── │
+│  ✅ Manages auth token storage                           │
+│  ✅ Updates extension badge based on page type           │
+│  ✅ Handles message communication                        │
+│  ✅ Coordinates between content and popup                │
+│  ✅ Stores/retrieves authentication state                │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  Popup UI (popup.html + popup.js)                        │
+│  ─────────────────────────────────────────────────────── │
+│  ✅ Shows auth status                                    │
+│  ✅ Displays profile info from current tab               │
+│  ✅ Handles lookup/search operations                     │
+│  ✅ Shows contact results (found/not found)              │
+│  ✅ Displays both URL types for matched contacts         │
+│  ✅ Save functionality with error handling               │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Message Flow Between Components
+
+```
+┌─────────────────┐
+│  Content Script │ ──detects page type──> Background Script
+│  (LinkedIn)     │                                │
+└─────────────────┘                                │
+                                                    ▼
+                                        ┌─────────────────────┐
+                                        │ Background Service  │
+                                        │ - Updates badge     │
+                                        │ - Stores page type  │
+                                        │ - Manages auth      │
+                                        └─────────┬───────────┘
+                                                  │
+                                    ┌─────────────┴──────────┐
+                                    │                        │
+                                    ▼                        ▼
+                        ┌──────────────────┐    ┌──────────────────┐
+                        │  Popup UI Opens  │    │ Content Script   │
+                        │  Shows page info │    │ Injects button   │
+                        │  Awaits user     │    │ Handles clicks   │
+                        │  action          │    │ Makes API calls  │
+                        └──────────────────┘    └──────────────────┘
+```
+
+### Data Flow: URL Detection to Backend
+
+```
+LinkedIn Page Load
+        │
+        ▼
+Content Script Detects URL Pattern
+        │
+        ├─→ /in/ → LinkedIn Profile
+        │        └─→ currentLinkedInUrl set
+        │        └─→ LINKEDIN_PROFILE message to background
+        │
+        └─→ /sales/lead/ → Sales Navigator Lead
+                 └─→ currentSalesNavigatorUrl set
+                 └─→ SALES_NAV_DETECTED message to background
+                                │
+                                ▼
+                    Background Script Updates Badge
+                    ├─→ LinkedIn: "!" (blue)
+                    └─→ Sales Nav: "S" (amber)
+                                │
+                                ▼
+                    Popup Opened (User clicks extension)
+                                │
+                                ▼
+                    Auto-Lookup or Manual Click
+                                │
+                                ▼
+        Send lookup request to backend
+        {
+          "linkedinUrl": "optional",
+          "salesNavigatorUrl": "optional"
+        }
+                                │
+                                ▼
+        Backend searches using findContactByLinkedInUrls()
+        (OR logic - matches either URL type)
+                                │
+                    ┌───────────┴──────────┐
+                    │                      │
+                    ▼                      ▼
+            Contact Found          Contact Not Found
+                    │                      │
+                    ▼                      ▼
+            Display Card          Display Form
+            - Both URLs          with both URLs
+            - Full info          - Save button
+            - Disabled save      - Save prompts
+                                  for both URLs
+```
 
 ---
 
@@ -319,24 +492,134 @@ User Opens LinkedIn Profile
 ```
 User Opens Sales Navigator Profile
          │
-         ├─→ PUBLIC LINKEDIN URL NOT FOUND
-         │   └─→ Show: "Could not find public profile"
-         │       └─→ Message: "Please wait for page to load"
-         │       └─→ Suggest retry or manual lookup
+         ├─→ INVALID SALES NAV URL
+         │   └─→ Show: "Not a valid Sales Navigator lead URL"
+         │       └─→ Message: "Visit a /sales/lead/ page"
          │
          ├─→ NO TOKEN
          │   └─→ Show "Sign in to use" CTA
+         │       └─→ Redirect to /extension-auth
          │
-         ├─→ LOOKUP FAILED
+         ├─→ LOOKUP FAILED (Network)
          │   └─→ Show: "Failed to look up profile"
+         │       └─→ Button resets, user can retry
          │
-         └─→ DAILY LIMIT EXCEEDED
-             └─→ Show: "Lookup limit reached"
+         ├─→ DAILY LIMIT EXCEEDED
+         │   └─→ Show: "Lookup limit reached"
+         │       └─→ Try again tomorrow
+         │
+         └─→ SAVE FAILED (Duplicate)
+             └─→ Show: "This profile is already saved"
+                 └─→ Display existing contact instead
 ```
 
 ---
 
-## 5. Backend Processing Flow
+## 5. Dual URL Lookup System (NEW)
+
+### How the Backend Handles Multiple URL Types
+
+```
+API Request: POST /api/extension/lookup
+Body: {
+  "linkedinUrl": "https://www.linkedin.com/in/john-doe/",
+  "salesNavigatorUrl": "https://www.linkedin.com/sales/lead/123456789/"
+}
+
+        │
+        ▼
+┌──────────────────────────────────────┐
+│ Input Validation                     │
+│ ✅ At least one URL required         │
+│ ✅ URLs must be valid format         │
+└────────────┬─────────────────────────┘
+             │
+             ▼
+┌──────────────────────────────────────┐
+│ Query Database                       │
+│ Method: findContactByLinkedInUrls()  │
+│ ────────────────────────────────────│
+│ SELECT * FROM contacts               │
+│ WHERE (                              │
+│   personLinkedIn = $1                │
+│   OR salesNavigatorUrl = $2          │
+│ )                                    │
+│ AND isDeleted = false                │
+│ LIMIT 1                              │
+└────────────┬─────────────────────────┘
+             │
+       ┌─────┴──────┐
+       │             │
+       ▼             ▼
+   FOUND         NOT FOUND
+       │             │
+       ├─→ Return contact with both URLs
+       │   - personLinkedIn (if exists)
+       │   - salesNavigatorUrl (if exists)
+       │
+       └─→ Return { found: false }
+
+
+API Request: POST /api/extension/save-profile
+Body: {
+  "linkedinUrl": "https://www.linkedin.com/in/john-doe/",
+  "salesNavigatorUrl": "https://www.linkedin.com/sales/lead/123456789/",
+  "fullName": "John Doe",
+  "title": "Sales Manager",
+  "company": "Acme Corp"
+}
+
+        │
+        ▼
+┌──────────────────────────────────────┐
+│ Validation                           │
+│ ✅ fullName required                 │
+│ ✅ At least one URL required         │
+│ ✅ Check for duplicates by either URL│
+└────────────┬─────────────────────────┘
+             │
+             ▼
+┌──────────────────────────────────────┐
+│ Check Existing (Duplicate Prevention)│
+│ Method: findContactByLinkedInUrls()  │
+│ ────────────────────────────────────│
+│ If existing contact found:           │
+│ └─→ Return 409 (Duplicate)           │
+│                                      │
+│ If no existing contact:              │
+│ └─→ Continue to create               │
+└────────────┬─────────────────────────┘
+             │
+             ▼
+┌──────────────────────────────────────┐
+│ Create Contact with BOTH URLs        │
+│ INSERT INTO contacts (                │
+│   firstName, lastName,                │
+│   personLinkedIn,     ← Store LinkedIn│
+│   salesNavigatorUrl,  ← Store SalesNav
+│   title, company,                    │
+│   ...                                │
+│ )                                    │
+└────────────┬─────────────────────────┘
+             │
+             ▼
+┌──────────────────────────────────────┐
+│ Return Success Response              │
+│ {                                    │
+│   "success": true,                   │
+│   "contact": {                       │
+│     "id": "...",                     │
+│     "fullName": "John Doe",          │
+│     "personLinkedIn": "...",         │
+│     "salesNavigatorUrl": "..."       │
+│   }                                  │
+│ }                                    │
+└──────────────────────────────────────┘
+```
+
+---
+
+## 6. Backend Processing Flow
 
 ```
 ┌─────────────────────────────────────┐
