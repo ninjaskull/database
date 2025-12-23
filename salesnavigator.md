@@ -671,13 +671,13 @@ This document outlines all tasks required to implement the new Sales Navigator p
 ## Summary of Changes by Component
 
 ### Database (`shared/schema.ts`)
-- [ ] Add `salesNavigatorUrl: text("sales_navigator_url")` to contacts table
-- [ ] Update insert schema to include new field
+- [x] Add `salesNavigatorUrl: text("sales_navigator_url")` to contacts table
+- [x] Update insert schema to include new field
 
 ### Backend (`server/storage.ts`)
-- [ ] Add `findContactBySalesNavigatorUrl()` to IStorage interface
-- [ ] Add `findContactByLinkedInUrls()` to IStorage interface
-- [ ] Implement both methods in DatabaseStorage class
+- [x] Add `findContactBySalesNavigatorUrl()` to IStorage interface
+- [x] Add `findContactByLinkedInUrls()` to IStorage interface
+- [x] Implement both methods in DatabaseStorage class
 
 ### Backend API (`server/routes.ts`)
 - [ ] Update POST `/api/extension/lookup` to accept both URL types

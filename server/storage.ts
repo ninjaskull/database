@@ -182,6 +182,10 @@ export interface IStorage {
   // LinkedIn URL search in existing contacts
   findContactsByLinkedInUrl(linkedinUrl: string): Promise<Contact[]>;
   
+  // Sales Navigator URL search
+  findContactBySalesNavigatorUrl(salesNavigatorUrl: string): Promise<Contact | undefined>;
+  findContactByLinkedInUrls(linkedinUrl?: string, salesNavigatorUrl?: string): Promise<Contact | undefined>;
+  
   // API Key operations
   createApiKey(apiKey: InsertApiKey): Promise<ApiKey>;
   getApiKeyByHash(hashedKey: string): Promise<ApiKey | undefined>;
@@ -2202,6 +2206,62 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(contacts.createdAt));
     
     return matchingContacts;
+  }
+
+  async findContactBySalesNavigatorUrl(salesNavigatorUrl: string): Promise<Contact | undefined> {
+    const [contact] = await db
+      .select()
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.salesNavigatorUrl, salesNavigatorUrl),
+          eq(contacts.isDeleted, false)
+        )
+      )
+      .limit(1);
+    return contact || undefined;
+  }
+
+  async findContactByLinkedInUrls(
+    linkedinUrl?: string,
+    salesNavigatorUrl?: string
+  ): Promise<Contact | undefined> {
+    if (!linkedinUrl && !salesNavigatorUrl) {
+      return undefined;
+    }
+
+    let whereCondition;
+
+    if (linkedinUrl && salesNavigatorUrl) {
+      // Search for either URL
+      whereCondition = and(
+        eq(contacts.isDeleted, false),
+        or(
+          ilike(contacts.personLinkedIn, linkedinUrl),
+          eq(contacts.salesNavigatorUrl, salesNavigatorUrl)
+        )
+      );
+    } else if (linkedinUrl) {
+      // Search by LinkedIn URL only
+      whereCondition = and(
+        eq(contacts.isDeleted, false),
+        ilike(contacts.personLinkedIn, linkedinUrl)
+      );
+    } else {
+      // Search by Sales Navigator URL only (salesNavigatorUrl must be defined here)
+      whereCondition = and(
+        eq(contacts.isDeleted, false),
+        eq(contacts.salesNavigatorUrl, salesNavigatorUrl!)
+      );
+    }
+    
+    const [contact] = await db
+      .select()
+      .from(contacts)
+      .where(whereCondition)
+      .limit(1);
+    
+    return contact || undefined;
   }
 
   // API Key operations

@@ -107,6 +107,7 @@ export const contacts = pgTable("contacts", {
   
   // URLs
   personLinkedIn: text("person_linkedin"),
+  salesNavigatorUrl: text("sales_navigator_url"),
   
   // Location
   city: text("city"),
