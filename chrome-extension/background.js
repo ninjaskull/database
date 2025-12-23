@@ -1,12 +1,23 @@
-const CRM_BASE_URL = "https://crm.fallowl.com";
+// Auto-detect base URL from sender origin
+function getBaseUrl(senderUrl) {
+  if (!senderUrl) return null;
+  try {
+    const url = new URL(senderUrl);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
 
+const DEFAULT_CRM_URL = "https://crm.fallowl.com";
 let activeTabId = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "STORE_AUTH") {
+    const apiBaseUrl = message.apiBaseUrl || getBaseUrl(sender.url) || DEFAULT_CRM_URL;
     chrome.storage.local.set({
       authToken: message.token,
-      apiBaseUrl: message.apiBaseUrl || CRM_BASE_URL
+      apiBaseUrl: apiBaseUrl
     }, () => {
       console.log("Auth token stored successfully");
       sendResponse({ success: true });
@@ -26,7 +37,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.get(["authToken", "apiBaseUrl"], (result) => {
       sendResponse({
         token: result.authToken,
-        apiBaseUrl: result.apiBaseUrl || CRM_BASE_URL
+        apiBaseUrl: result.apiBaseUrl || getBaseUrl(sender.url) || DEFAULT_CRM_URL
       });
     });
     return true;
@@ -40,7 +51,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "OPEN_AUTH") {
-    chrome.tabs.create({ url: message.url || CRM_BASE_URL + "/extension-auth" });
+    const baseUrl = getBaseUrl(sender.url) || DEFAULT_CRM_URL;
+    chrome.tabs.create({ url: message.url || baseUrl + "/extension-auth" });
     sendResponse({ success: true });
     return true;
   }

@@ -11,6 +11,8 @@
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://linkedin.com/*",
+    "https://*.replit.app/*",
+    "https://*.replit.dev/*",
     "https://crm.fallowl.com/*",
     "https://*.fallowl.com/*"
   ],
@@ -34,7 +36,12 @@
       "css": ["content-styles.css"]
     },
     {
-      "matches": ["https://crm.fallowl.com/*", "https://*.fallowl.com/*"],
+      "matches": [
+        "https://*.replit.app/*",
+        "https://*.replit.dev/*",
+        "https://crm.fallowl.com/*",
+        "https://*.fallowl.com/*"
+      ],
       "js": ["dashboard-content.js"],
       "run_at": "document_idle"
     }
@@ -43,6 +50,11 @@
     "service_worker": "background.js"
   },
   "externally_connectable": {
-    "matches": ["https://crm.fallowl.com/*", "https://*.fallowl.com/*"]
+    "matches": [
+      "https://*.replit.app/*",
+      "https://*.replit.dev/*",
+      "https://crm.fallowl.com/*",
+      "https://*.fallowl.com/*"
+    ]
   }
 }
