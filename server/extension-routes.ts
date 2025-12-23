@@ -218,4 +218,80 @@ router.post("/search", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/save-profile", async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    
+    if (!token) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Authentication required" 
+      });
+    }
+
+    const { valid, user } = await validateSession(token);
+    
+    if (!valid || !user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Invalid or expired token" 
+      });
+    }
+
+    const { linkedinUrl, fullName, firstName, lastName, title, company, email, location } = req.body;
+    
+    if (!linkedinUrl || !fullName) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "LinkedIn URL and full name are required" 
+      });
+    }
+
+    // Check if this LinkedIn URL already exists
+    const existing = await storage.findContactsByLinkedInUrl(linkedinUrl);
+    if (existing.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "This LinkedIn profile is already saved" 
+      });
+    }
+
+    // Extract first and last name if not provided
+    let firstName_ = firstName;
+    let lastName_ = lastName;
+    
+    if (!firstName_ && !lastName_) {
+      const nameParts = fullName.trim().split(/\s+/);
+      firstName_ = nameParts[0] || "";
+      lastName_ = nameParts.slice(1).join(" ") || "";
+    }
+
+    // Create the contact
+    const contact = await storage.createProspect({
+      firstName: firstName_ || "",
+      lastName: lastName_ || "",
+      email: email || "",
+      personLinkedIn: linkedinUrl,
+      ...(title && { title }),
+      ...(company && { company }),
+    });
+
+    res.json({
+      success: true,
+      message: "LinkedIn profile saved successfully",
+      contact: {
+        id: contact.id,
+        fullName: contact.fullName,
+        email: contact.email,
+      },
+    });
+  } catch (error) {
+    console.error("Extension save profile error:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to save profile" 
+    });
+  }
+});
+
 export const extensionRouter = router;

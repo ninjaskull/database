@@ -35,9 +35,11 @@ const contactDetail = document.getElementById("contact-detail");
 const errorMessage = document.getElementById("error-message");
 
 const logoutBtn = document.getElementById("logout-btn");
+const saveNotFoundBtn = document.getElementById("save-not-found-btn");
 
 let currentLinkedInUrl = null;
 let isAutoLooking = false;
+let currentProfile = null;
 
 async function getStoredAuth() {
   const result = await chrome.storage.local.get(["authToken", "apiBaseUrl"]);
@@ -380,6 +382,7 @@ async function performManualLookup() {
       linkedinLookupSection.classList.add("hidden");
       notFoundSection.classList.remove("hidden");
       notFoundSection.classList.add("fade-in");
+      currentProfile = null;
     }
   } catch (error) {
     console.error("Lookup error:", error);
@@ -661,6 +664,68 @@ logoutBtn.addEventListener("click", async () => {
   await clearStoredAuth();
   redirectToAuth();
 });
+
+if (saveNotFoundBtn) {
+  saveNotFoundBtn.addEventListener("click", async () => {
+    if (!currentLinkedInUrl) {
+      showError("No LinkedIn profile URL found");
+      return;
+    }
+
+    saveNotFoundBtn.disabled = true;
+    const originalText = saveNotFoundBtn.textContent;
+    saveNotFoundBtn.textContent = "Saving...";
+
+    try {
+      const { token, apiBaseUrl } = await getStoredAuth();
+
+      const response = await fetch(`${apiBaseUrl}/api/extension/save-profile`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          linkedinUrl: currentLinkedInUrl,
+          fullName: currentProfile?.fullName || "Unknown",
+          title: currentProfile?.title || undefined,
+          company: currentProfile?.company || undefined,
+          email: currentProfile?.email || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        notFoundSection.classList.add("hidden");
+        const savedContact = document.createElement("div");
+        savedContact.className = "saved-confirmation fade-in";
+        savedContact.innerHTML = `
+          <div class="saved-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h3>Profile Saved!</h3>
+          <p>Successfully saved to your CRM.</p>
+        `;
+        mainView.querySelector(".search-section").parentElement.insertBefore(savedContact, mainView.querySelector(".search-section"));
+        setTimeout(() => {
+          savedContact.classList.add("hidden");
+        }, 3000);
+      } else {
+        showError(data.message || "Failed to save profile");
+        saveNotFoundBtn.disabled = false;
+        saveNotFoundBtn.textContent = originalText;
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      showError("Failed to save profile");
+      saveNotFoundBtn.disabled = false;
+      saveNotFoundBtn.textContent = originalText;
+    }
+  });
+}
 
 lookupBtn.addEventListener("click", () => {
   if (currentLinkedInUrl) {

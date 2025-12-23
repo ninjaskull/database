@@ -693,8 +693,46 @@
 
     const syncBtn = card.querySelector("#prospect-sync-crm-btn");
     if (syncBtn) {
-      syncBtn.addEventListener("click", () => {
-        showNotification("Contact synced to CRM!", "success");
+      syncBtn.addEventListener("click", async () => {
+        syncBtn.disabled = true;
+        const originalText = syncBtn.textContent;
+        syncBtn.textContent = "Saving...";
+        
+        try {
+          const result = await chrome.storage.local.get(["authToken", "apiBaseUrl"]);
+          const apiBaseUrl = result.apiBaseUrl || CRM_BASE_URL;
+
+          const response = await fetch(`${apiBaseUrl}/api/extension/save-profile`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${result.authToken}`,
+            },
+            body: JSON.stringify({
+              linkedinUrl: publicUrl || window.location.href,
+              fullName: contact.fullName,
+              title: contact.title || undefined,
+              company: contact.company || undefined,
+              email: contact.email || undefined,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            showNotification("Contact saved to CRM!", "success");
+            syncBtn.textContent = "✓ Saved";
+          } else {
+            showNotification(data.message || "Failed to save contact", "error");
+            syncBtn.disabled = false;
+            syncBtn.textContent = originalText;
+          }
+        } catch (error) {
+          console.error("Save error:", error);
+          showNotification("Failed to save contact", "error");
+          syncBtn.disabled = false;
+          syncBtn.textContent = originalText;
+        }
       });
     }
   }
