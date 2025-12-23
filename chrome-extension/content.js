@@ -292,7 +292,27 @@
         showNotification(data.message || "Lookup limit reached", "warning");
         resetButton();
       } else if (data.success && data.found) {
-        showContactCard(data.contact, data.usage);
+        // Profile found - show contact card with disabled save button
+        showContactCard(data.contact, data.usage, true);
+      } else if (data.success) {
+        // Profile NOT found - show it as a new card that can be saved
+        // Create a minimal contact object from the page data
+        const newContact = {
+          fullName: extractProfileName() || "Unknown",
+          firstName: "",
+          lastName: "",
+          email: "",
+          mobilePhone: "",
+          title: "",
+          company: "",
+          city: "",
+          state: "",
+          country: "",
+          leadScore: null,
+          personLinkedIn: getLinkedInUrlForLookup(),
+        };
+        // Show contact card with enabled save button
+        showContactCard(newContact, data.usage, false);
       } else {
         showNotification("No contact found for this profile", "info");
         resetButton();
@@ -575,7 +595,7 @@
     `;
   }
 
-  function showContactCard(contact, usage) {
+  function showContactCard(contact, usage, isFound = true) {
     const existing = document.getElementById("prospect-contact-card");
     if (existing) {
       existing.classList.add("prospect-card-hidden");
@@ -656,7 +676,7 @@
             Email
           </a>
         ` : '<div></div>'}
-        <button class="prospect-btn prospect-btn-secondary" id="prospect-sync-crm-btn">Sync CRM</button>
+        <button class="prospect-btn prospect-btn-secondary" id="prospect-sync-crm-btn" ${isFound ? 'disabled title="Profile already in CRM"' : ''}>Sync CRM</button>
       </div>
     `;
 
@@ -692,7 +712,7 @@
     });
 
     const syncBtn = card.querySelector("#prospect-sync-crm-btn");
-    if (syncBtn) {
+    if (syncBtn && !isFound) {
       syncBtn.addEventListener("click", async () => {
         syncBtn.disabled = true;
         const originalText = syncBtn.textContent;
