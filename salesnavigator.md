@@ -679,15 +679,15 @@ This document outlines all tasks required to implement the new Sales Navigator p
 - [x] Add `findContactByLinkedInUrls()` to IStorage interface
 - [x] Implement both methods in DatabaseStorage class
 
-### Backend API (`server/routes.ts`)
-- [ ] Update POST `/api/extension/lookup` to accept both URL types
-- [ ] Update POST `/api/extension/save-profile` to save both URL types
+### Backend API (`server/extension-routes.ts`)
+- [x] Update POST `/api/extension/lookup` to accept both URL types
+- [x] Update POST `/api/extension/save-profile` to save both URL types
 
 ### Chrome Extension Content Script
-- [ ] Detect Sales Navigator URL pattern
-- [ ] Extract lead ID from URL
-- [ ] Remove old DOM extraction logic
-- [ ] Send lead ID to background script
+- [x] Detect Sales Navigator URL pattern
+- [x] Extract lead ID from URL
+- [x] Remove old DOM extraction logic
+- [x] Send Sales Navigator URL to lookup endpoint
 
 ### Chrome Extension Background Script
 - [ ] Add handler for RESOLVE_SALES_NAV_LEAD message

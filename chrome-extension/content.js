@@ -16,8 +16,12 @@
   }
 
   function isSalesNavigatorPage() {
-    return window.location.href.includes("linkedin.com/sales/lead/") || 
-           window.location.href.includes("linkedin.com/sales/people/");
+    return window.location.href.includes("linkedin.com/sales/lead/");
+  }
+
+  function extractSalesNavLeadId() {
+    const match = window.location.href.match(/linkedin\.com\/sales\/lead\/(\d+)/);
+    return match ? match[1] : null;
   }
 
   function getProfileKey() {
@@ -236,8 +240,12 @@
     if (isProfilePage()) {
       return window.location.href;
     }
+    return null;
+  }
+
+  function getSalesNavigatorUrl() {
     if (isSalesNavigatorPage()) {
-      return extractPublicLinkedInUrl();
+      return window.location.href;
     }
     return null;
   }
@@ -262,12 +270,11 @@
       const apiBaseUrl = result.apiBaseUrl || CRM_BASE_URL;
       
       let linkedinUrl = getLinkedInUrlForLookup();
-      
-      if (isSalesNavigatorPage() && !linkedinUrl) {
-        showNotification("Could not find public LinkedIn profile. Please wait for page to load.", "warning");
-        resetButton();
-        return;
-      }
+      let salesNavigatorUrl = getSalesNavigatorUrl();
+
+      const lookupPayload = {};
+      if (linkedinUrl) lookupPayload.linkedinUrl = linkedinUrl;
+      if (salesNavigatorUrl) lookupPayload.salesNavigatorUrl = salesNavigatorUrl;
 
       const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
         method: "POST",
@@ -275,7 +282,7 @@
           "Content-Type": "application/json",
           Authorization: `Bearer ${result.authToken}`,
         },
-        body: JSON.stringify({ linkedinUrl }),
+        body: JSON.stringify(lookupPayload),
       });
 
       const data = await response.json();
@@ -309,7 +316,8 @@
           state: "",
           country: "",
           leadScore: null,
-          personLinkedIn: getLinkedInUrlForLookup(),
+          personLinkedIn: linkedinUrl,
+          salesNavigatorUrl: salesNavigatorUrl,
         };
         // Show contact card with enabled save button
         showContactCard(newContact, data.usage, false);

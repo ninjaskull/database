@@ -18,11 +18,12 @@ router.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 const linkedinLookupSchema = z.object({
-  linkedinUrl: z.string().url().refine(
-    (url) => url.includes("linkedin.com"),
-    "Must be a LinkedIn URL"
-  ),
-});
+  linkedinUrl: z.string().url().optional(),
+  salesNavigatorUrl: z.string().optional(),
+}).refine(
+  (data) => data.linkedinUrl || data.salesNavigatorUrl,
+  "At least one URL (linkedinUrl or salesNavigatorUrl) is required"
+);
 
 router.get("/validate", async (req: Request, res: Response) => {
   try {
@@ -95,21 +96,26 @@ router.post("/lookup", async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ 
         success: false, 
-        message: "Invalid LinkedIn URL" 
+        message: "At least one URL (linkedinUrl or salesNavigatorUrl) is required" 
       });
     }
 
-    const { linkedinUrl } = parsed.data;
+    const { linkedinUrl, salesNavigatorUrl } = parsed.data;
     
-    const normalizedUrl = linkedinUrl
-      .toLowerCase()
-      .replace(/\/$/, "")
-      .replace(/^https?:\/\/(www\.)?/, "https://www.");
+    let normalizedLinkedInUrl: string | undefined;
+    if (linkedinUrl) {
+      normalizedLinkedInUrl = linkedinUrl
+        .toLowerCase()
+        .replace(/\/$/, "")
+        .replace(/^https?:\/\/(www\.)?/, "https://www.");
+    }
 
-    const contacts = await storage.findContactsByLinkedInUrl(normalizedUrl);
+    const contact = await storage.findContactByLinkedInUrls(
+      normalizedLinkedInUrl,
+      salesNavigatorUrl
+    );
 
-    if (contacts.length > 0) {
-      const contact = contacts[0];
+    if (contact) {
       res.json({
         success: true,
         found: true,
@@ -129,6 +135,8 @@ router.post("/lookup", async (req: Request, res: Response) => {
           state: contact.state,
           country: contact.country,
           leadScore: contact.leadScore,
+          personLinkedIn: contact.personLinkedIn,
+          salesNavigatorUrl: contact.salesNavigatorUrl,
         },
         usage: {
           remaining: null,
@@ -140,7 +148,7 @@ router.post("/lookup", async (req: Request, res: Response) => {
       res.json({
         success: true,
         found: false,
-        message: "No contact found for this LinkedIn profile",
+        message: "No contact found for this profile",
         usage: {
           remaining: null,
           limit: null,
@@ -238,21 +246,28 @@ router.post("/save-profile", async (req: Request, res: Response) => {
       });
     }
 
-    const { linkedinUrl, fullName, firstName, lastName, title, company, email, location } = req.body;
+    const { linkedinUrl, salesNavigatorUrl, fullName, firstName, lastName, title, company, email, location } = req.body;
     
-    if (!linkedinUrl || !fullName) {
+    if (!fullName) {
       return res.status(400).json({ 
         success: false, 
-        message: "LinkedIn URL and full name are required" 
+        message: "Full name is required" 
       });
     }
 
-    // Check if this LinkedIn URL already exists
-    const existing = await storage.findContactsByLinkedInUrl(linkedinUrl);
-    if (existing.length > 0) {
+    if (!linkedinUrl && !salesNavigatorUrl) {
       return res.status(400).json({ 
         success: false, 
-        message: "This LinkedIn profile is already saved" 
+        message: "At least one URL (linkedinUrl or salesNavigatorUrl) is required" 
+      });
+    }
+
+    // Check if either URL already exists
+    const existing = await storage.findContactByLinkedInUrls(linkedinUrl, salesNavigatorUrl);
+    if (existing) {
+      return res.status(409).json({ 
+        success: false, 
+        message: "This profile is already saved" 
       });
     }
 
@@ -266,23 +281,26 @@ router.post("/save-profile", async (req: Request, res: Response) => {
       lastName_ = nameParts.slice(1).join(" ") || "";
     }
 
-    // Create the contact
+    // Create the contact with both URLs
     const contact = await storage.createProspect({
       firstName: firstName_ || "",
       lastName: lastName_ || "",
       email: email || "",
-      personLinkedIn: linkedinUrl,
+      personLinkedIn: linkedinUrl || "",
+      salesNavigatorUrl: salesNavigatorUrl || undefined,
       ...(title && { title }),
       ...(company && { company }),
     });
 
     res.json({
       success: true,
-      message: "LinkedIn profile saved successfully",
+      message: "Profile saved successfully",
       contact: {
         id: contact.id,
         fullName: contact.fullName,
         email: contact.email,
+        personLinkedIn: contact.personLinkedIn,
+        salesNavigatorUrl: contact.salesNavigatorUrl,
       },
     });
   } catch (error) {
