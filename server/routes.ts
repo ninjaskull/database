@@ -2722,6 +2722,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // LinkedIn profiles export endpoint
+  app.get("/api/contacts/linkedin-profiles", requireAuth, async (req, res) => {
+    try {
+      const { contacts } = await storage.getContacts({
+        limit: 100000,
+        page: 1,
+      });
+      
+      // Filter only contacts with LinkedIn URLs
+      const linkedinProfiles = contacts.filter(c => c.personLinkedIn && c.personLinkedIn.trim());
+      
+      res.json(linkedinProfiles);
+    } catch (error) {
+      console.error("LinkedIn profiles fetch error:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch profiles" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

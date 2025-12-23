@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, LayoutDashboard, Users, Building2, UserPlus, Upload, Linkedin, BarChart3, Database, Settings, Sparkles, TrendingUp, Zap, AlertCircle, Brain } from "lucide-react";
+import { ChevronDown, ChevronRight, LayoutDashboard, Users, Building2, UserPlus, Upload, Linkedin, BarChart3, Database, Settings, Sparkles, TrendingUp, Zap, AlertCircle, Brain, Download } from "lucide-react";
 
 interface NavItem {
   name: string;
@@ -36,6 +36,7 @@ const workspaces: NavGroup[] = [
       { name: 'Prospects', href: '/prospects', icon: <UserPlus className="w-4 h-4" /> },
       { name: 'Companies', href: '/companies', icon: <Building2 className="w-4 h-4" /> },
       { name: 'LinkedIn Search', href: '/linkedin-search', icon: <Linkedin className="w-4 h-4" /> },
+      { name: 'LinkedIn Export', href: '/linkedin-profiles-export', icon: <Download className="w-4 h-4" /> },
     ]
   },
   {
