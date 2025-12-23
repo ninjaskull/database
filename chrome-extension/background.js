@@ -50,6 +50,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "SALES_NAV_DETECTED") {
+    chrome.action.setBadgeText({ text: "S" });
+    chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (message.type === "OPEN_AUTH") {
     const baseUrl = getBaseUrl(sender.url) || DEFAULT_CRM_URL;
     chrome.tabs.create({ url: message.url || baseUrl + "/extension-auth" });

@@ -109,7 +109,11 @@
   }
 
   function notifyBackground() {
-    chrome.runtime.sendMessage({ type: "LINKEDIN_PROFILE" });
+    if (isProfilePage()) {
+      chrome.runtime.sendMessage({ type: "LINKEDIN_PROFILE" });
+    } else if (isSalesNavigatorPage()) {
+      chrome.runtime.sendMessage({ type: "SALES_NAV_DETECTED" });
+    }
   }
 
   function saveButtonPosition() {

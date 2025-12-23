@@ -690,18 +690,18 @@ This document outlines all tasks required to implement the new Sales Navigator p
 - [x] Send Sales Navigator URL to lookup endpoint
 
 ### Chrome Extension Background Script
-- [ ] Add handler for RESOLVE_SALES_NAV_LEAD message
-- [ ] Implement `resolveSalesNavLeadToLinkedIn()` function
-- [ ] Implement `waitForLinkedInRedirect()` function
-- [ ] Handle errors and timeouts
-- [ ] Clean up background tabs after resolution
+- [x] Add handler for SALES_NAV_DETECTED message
+- [x] Update notifyBackground to detect page type
+- [x] Set badge text "S" for Sales Navigator pages
+- [x] Handle both LinkedIn and Sales Navigator detection
 
 ### Chrome Extension Popup/UI
-- [ ] Show "Resolving LinkedIn profile..." state
-- [ ] Handle resolved URL response
-- [ ] Update contact card to display both URLs
-- [ ] Update lookup to send both URLs
-- [ ] Update save to include both URLs
+- [x] Add currentSalesNavigatorUrl variable
+- [x] Update extractAndLookupSalesNav to use direct URL detection
+- [x] Update performAutoLookup to handle both URLs
+- [x] Update performManualLookup to handle both URLs
+- [x] Update showContactResult to display both LinkedIn and Sales Navigator URLs
+- [x] Update save function to include both URLs
 
 ### Documentation
 - [ ] Update `docfig.md` with new flow

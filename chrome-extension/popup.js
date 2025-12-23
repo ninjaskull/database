@@ -38,6 +38,7 @@ const logoutBtn = document.getElementById("logout-btn");
 const saveNotFoundBtn = document.getElementById("save-not-found-btn");
 
 let currentLinkedInUrl = null;
+let currentSalesNavigatorUrl = null;
 let isAutoLooking = false;
 let currentProfile = null;
 
@@ -211,61 +212,22 @@ async function extractAndLookupSalesNav(tabId) {
   linkedinLookupSection.classList.add("hidden");
   
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const selectors = [
-          'a[href*="linkedin.com/in/"]',
-          '.profile-topcard a[href*="/in/"]',
-          '.artdeco-entity-lockup a[href*="/in/"]',
-          'a[data-control-name="view_linkedin"]'
-        ];
-        
-        for (const selector of selectors) {
-          const links = document.querySelectorAll(selector);
-          for (const link of links) {
-            const href = link.getAttribute('href');
-            if (href && href.includes('/in/')) {
-              const match = href.match(/linkedin\.com\/in\/([^/?]+)/) || href.match(/\/in\/([^/?]+)/);
-              if (match) {
-                return `https://www.linkedin.com/in/${match[1]}/`;
-              }
-            }
-          }
-        }
-        
-        const allLinks = document.querySelectorAll('a[href]');
-        for (const link of allLinks) {
-          const href = link.getAttribute('href') || '';
-          if (href.includes('/in/') && !href.includes('/sales/')) {
-            const match = href.match(/\/in\/([^/?]+)/);
-            if (match && match[1].length > 2) {
-              return `https://www.linkedin.com/in/${match[1]}/`;
-            }
-          }
-        }
-        
-        return null;
-      }
-    });
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const salesNavUrl = tab.url;
     
-    const publicUrl = results?.[0]?.result;
-    
-    if (publicUrl) {
-      currentLinkedInUrl = publicUrl;
-      const profileMatch = publicUrl.match(/linkedin\.com\/in\/([^/?]+)/);
-      const profileSlug = profileMatch ? profileMatch[1].replace(/-/g, " ") : "Profile";
-      linkedinProfileName.textContent = `${formatProfileName(profileSlug)} (Sales Nav)`;
-      
+    if (salesNavUrl && salesNavUrl.includes("linkedin.com/sales/lead/")) {
+      currentLinkedInUrl = null;
+      currentSalesNavigatorUrl = salesNavUrl;
+      linkedinProfileName.textContent = "Sales Navigator Profile";
       await performAutoLookup();
     } else {
       autoLookupLoading.classList.add("hidden");
       linkedinLookupSection.classList.remove("hidden");
-      linkedinProfileName.textContent = "Sales Navigator - Click to lookup";
-      showError("Could not extract public profile. Try clicking Lookup.");
+      linkedinProfileName.textContent = "Sales Navigator Profile";
+      showError("Could not detect Sales Navigator URL.");
     }
   } catch (error) {
-    console.error("Sales Nav extraction error:", error);
+    console.error("Sales Nav detection error:", error);
     autoLookupLoading.classList.add("hidden");
     linkedinLookupSection.classList.remove("hidden");
     linkedinProfileName.textContent = "Sales Navigator Profile";
@@ -280,7 +242,7 @@ function formatProfileName(slug) {
 }
 
 async function performAutoLookup() {
-  if (!currentLinkedInUrl || isAutoLooking) return;
+  if ((!currentLinkedInUrl && !currentSalesNavigatorUrl) || isAutoLooking) return;
   
   isAutoLooking = true;
   
@@ -291,13 +253,17 @@ async function performAutoLookup() {
   try {
     const { token, apiBaseUrl } = await getStoredAuth();
 
+    const lookupPayload = {};
+    if (currentLinkedInUrl) lookupPayload.linkedinUrl = currentLinkedInUrl;
+    if (currentSalesNavigatorUrl) lookupPayload.salesNavigatorUrl = currentSalesNavigatorUrl;
+
     const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ linkedinUrl: currentLinkedInUrl }),
+      body: JSON.stringify(lookupPayload),
     });
 
     const data = await response.json();
@@ -337,7 +303,7 @@ async function performAutoLookup() {
 }
 
 async function performManualLookup() {
-  if (!currentLinkedInUrl) return;
+  if (!currentLinkedInUrl && !currentSalesNavigatorUrl) return;
   
   const btnContent = lookupBtn.querySelector(".btn-lookup-content");
   const btnLoading = lookupBtn.querySelector(".btn-lookup-loading");
@@ -349,13 +315,17 @@ async function performManualLookup() {
   try {
     const { token, apiBaseUrl } = await getStoredAuth();
 
+    const lookupPayload = {};
+    if (currentLinkedInUrl) lookupPayload.linkedinUrl = currentLinkedInUrl;
+    if (currentSalesNavigatorUrl) lookupPayload.salesNavigatorUrl = currentSalesNavigatorUrl;
+
     const response = await fetch(`${apiBaseUrl}/api/extension/lookup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ linkedinUrl: currentLinkedInUrl }),
+      body: JSON.stringify(lookupPayload),
     });
 
     const data = await response.json();
@@ -450,6 +420,41 @@ function showContactResult(contact) {
   
   if (contact.leadScore) {
     fieldsHtml += createFieldHtml("score", "Lead Score", contact.leadScore);
+  }
+
+  if (contact.personLinkedIn) {
+    fieldsHtml += `
+      <div class="contact-field slide-in-stagger">
+        <div class="field-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
+            <rect x="2" y="9" width="4" height="12"/>
+            <circle cx="4" cy="4" r="2"/>
+          </svg>
+        </div>
+        <div class="field-content">
+          <span class="field-label">LinkedIn Profile</span>
+          <a href="${contact.personLinkedIn}" target="_blank" class="field-value">View Profile</a>
+        </div>
+      </div>
+    `;
+  }
+
+  if (contact.salesNavigatorUrl) {
+    fieldsHtml += `
+      <div class="contact-field slide-in-stagger">
+        <div class="field-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.35-4.35"/>
+          </svg>
+        </div>
+        <div class="field-content">
+          <span class="field-label">Sales Navigator</span>
+          <a href="${contact.salesNavigatorUrl}" target="_blank" class="field-value">View Lead</a>
+        </div>
+      </div>
+    `;
   }
   
   contactFields.innerHTML = fieldsHtml;
@@ -667,8 +672,8 @@ logoutBtn.addEventListener("click", async () => {
 
 if (saveNotFoundBtn) {
   saveNotFoundBtn.addEventListener("click", async () => {
-    if (!currentLinkedInUrl) {
-      showError("No LinkedIn profile URL found");
+    if (!currentLinkedInUrl && !currentSalesNavigatorUrl) {
+      showError("No profile URL found");
       return;
     }
 
@@ -679,19 +684,23 @@ if (saveNotFoundBtn) {
     try {
       const { token, apiBaseUrl } = await getStoredAuth();
 
+      const savePayload = {
+        fullName: currentProfile?.fullName || "Unknown",
+        title: currentProfile?.title || undefined,
+        company: currentProfile?.company || undefined,
+        email: currentProfile?.email || undefined,
+      };
+
+      if (currentLinkedInUrl) savePayload.linkedinUrl = currentLinkedInUrl;
+      if (currentSalesNavigatorUrl) savePayload.salesNavigatorUrl = currentSalesNavigatorUrl;
+
       const response = await fetch(`${apiBaseUrl}/api/extension/save-profile`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          linkedinUrl: currentLinkedInUrl,
-          fullName: currentProfile?.fullName || "Unknown",
-          title: currentProfile?.title || undefined,
-          company: currentProfile?.company || undefined,
-          email: currentProfile?.email || undefined,
-        }),
+        body: JSON.stringify(savePayload),
       });
 
       const data = await response.json();
